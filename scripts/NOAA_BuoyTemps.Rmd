@@ -1,0 +1,293 @@
+---
+title: "Hawaii temperatures (NOAA)"
+author: "jillashey"
+date: "2023-05-07"
+output: html_document
+---
+
+This script plots temperature data from Kaneohe Bay, HI (NOAA Buoy - Station 51207). See data [here](https://www.ndbc.noaa.gov/station_page.php?station=51207). 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lubridate)
+library(tidyr)
+library(ggplot2)
+library(plotrix)
+library(tidyverse)
+library(dplyr)
+library(reshape2)
+library(gridExtra)
+library(FSA)
+library(naniar)
+```
+
+## Load and format data 
+The data is very odd when downloaded from the NOAA website. I initially formatted it in Excel by doing text to columns and then deleting the 2nd header row. 
+```{r}
+## will not be including 2012
+
+# 2013
+temp2013 <- read.csv("2023/data/NOAA/51207h2013.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2013$Date <- paste0(temp2013$MM, sep = "-", temp2013$DD)
+temp2013$Time <- paste0(temp2013$hh, sep = ":", temp2013$mm)
+temp2013$Date.Time <- paste0(temp2013$Date, sep = " ", temp2013$Time)
+unique(temp2013$WTMP) # no NAs, good 
+range(temp2013$WTMP)
+temp2013$Date.Time <- parse_date_time(temp2013$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2013$WTMP <- as.numeric(temp2013$WTMP)
+
+# 2014
+temp2014 <- read.csv("2023/data/NOAA/51207h2014.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2014$Date <- paste0(temp2014$MM, sep = "-", temp2014$DD)
+temp2014$Time <- paste0(temp2014$hh, sep = ":", temp2014$mm)
+temp2014$Date.Time <- paste0(temp2014$Date, sep = " ", temp2014$Time)
+unique(temp2014$WTMP) # no NAs, good 
+range(temp2014$WTMP)
+temp2014$Date.Time <- parse_date_time(temp2014$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2014$WTMP <- as.numeric(temp2014$WTMP)
+
+# 2015
+temp2015 <- read.csv("2023/data/NOAA/51207h2015.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2015$Date <- paste0(temp2015$MM, sep = "-", temp2015$DD)
+temp2015$Time <- paste0(temp2015$hh, sep = ":", temp2015$mm)
+temp2015$Date.Time <- paste0(temp2015$Date, sep = " ", temp2015$Time)
+unique(temp2015$WTMP) # no NAs, good 
+range(temp2015$WTMP)
+temp2015$Date.Time <- parse_date_time(temp2015$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2015$WTMP <- as.numeric(temp2015$WTMP)
+
+# 2016
+temp2016 <- read.csv("2023/data/NOAA/51207h2016.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2016$Date <- paste0(temp2016$MM, sep = "-", temp2016$DD)
+temp2016$Time <- paste0(temp2016$hh, sep = ":", temp2016$mm)
+temp2016$Date.Time <- paste0(temp2016$Date, sep = " ", temp2016$Time)
+unique(temp2016$WTMP) # no NAs, good 
+range(temp2016$WTMP)
+temp2016$Date.Time <- parse_date_time(temp2016$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2016$WTMP <- as.numeric(temp2016$WTMP)
+
+# 2017
+temp2017 <- read.csv("2023/data/NOAA/51207h2017.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2017$Date <- paste0(temp2017$MM, sep = "-", temp2017$DD)
+temp2017$Time <- paste0(temp2017$hh, sep = ":", temp2017$mm)
+temp2017$Date.Time <- paste0(temp2017$Date, sep = " ", temp2017$Time)
+unique(temp2017$WTMP) # no NAs, good 
+range(temp2017$WTMP)
+temp2017$Date.Time <- parse_date_time(temp2017$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2017$WTMP <- as.numeric(temp2017$WTMP)
+
+# 2018
+temp2018 <- read.csv("2023/data/NOAA/51207h2018.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2018$Date <- paste0(temp2018$MM, sep = "-", temp2018$DD)
+temp2018$Time <- paste0(temp2018$hh, sep = ":", temp2018$mm)
+temp2018$Date.Time <- paste0(temp2018$Date, sep = " ", temp2018$Time)
+unique(temp2018$WTMP) # no NAs, good 
+range(temp2018$WTMP)
+temp2018$Date.Time <- parse_date_time(temp2018$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2018$WTMP <- as.numeric(temp2018$WTMP)
+
+# 2019
+temp2019 <- read.csv("2023/data/NOAA/51207h2019.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2019$Date <- paste0(temp2019$MM, sep = "-", temp2019$DD)
+temp2019$Time <- paste0(temp2019$hh, sep = ":", temp2019$mm)
+temp2019$Date.Time <- paste0(temp2019$Date, sep = " ", temp2019$Time)
+unique(temp2019$WTMP) # no NAs, good 
+range(temp2019$WTMP)
+temp2019$Date.Time <- parse_date_time(temp2019$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2019$WTMP <- as.numeric(temp2019$WTMP)
+
+# 2020
+temp2020 <- read.csv("2023/data/NOAA/51207h2020.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2020$Date <- paste0(temp2020$MM, sep = "-", temp2020$DD)
+temp2020$Time <- paste0(temp2020$hh, sep = ":", temp2020$mm)
+temp2020$Date.Time <- paste0(temp2020$Date, sep = " ", temp2020$Time)
+unique(temp2020$WTMP) # no NAs, good 
+range(temp2020$WTMP)
+temp2020$Date.Time <- parse_date_time(temp2020$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2020$WTMP <- as.numeric(temp2020$WTMP)
+
+# 2021
+temp2021 <- read.csv("2023/data/NOAA/51207h2021.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2021$Date <- paste0(temp2021$MM, sep = "-", temp2021$DD)
+temp2021$Time <- paste0(temp2021$hh, sep = ":", temp2021$mm)
+temp2021$Date.Time <- paste0(temp2021$Date, sep = " ", temp2021$Time)
+unique(temp2021$WTMP) # no NAs, good 
+range(temp2021$WTMP)
+temp2021$Date.Time <- parse_date_time(temp2021$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2021$WTMP <- as.numeric(temp2021$WTMP)
+
+# 2022
+temp2022 <- read.csv("2023/data/NOAA/51207h2022.txt", sep="\t", skip=c(0), header=TRUE, na.strings = "NA")[,c(1:5,15)]
+temp2022$Date <- paste0(temp2022$MM, sep = "-", temp2022$DD)
+temp2022$Time <- paste0(temp2022$hh, sep = ":", temp2022$mm)
+temp2022$Date.Time <- paste0(temp2022$Date, sep = " ", temp2022$Time)
+unique(temp2022$WTMP) # no NAs, good 
+range(temp2022$WTMP)
+temp2022$Date.Time <- parse_date_time(temp2022$Date.Time, "%m!-%d! %H!:%M!" , tz="HST")
+temp2022$WTMP <- as.numeric(temp2022$WTMP)
+
+```
+
+## Plot using base R functions 
+```{r}
+pdf("2023/output/NOAA/KBay_Temps_2013-22.pdf")
+plot(temp2013$Date.Time, temp2013$WTMP, cex = 0.1, col = "red", xlab = "Date", ylab = "Temperature (°C)", ylim = c(22, 30))
+lines(temp2014$Date.Time, temp2014$WTMP, cex = 0.2, col = "orange")
+lines(temp2015$Date.Time, temp2015$WTMP, cex = 0.2, col = "purple")
+lines(temp2016$Date.Time, temp2016$WTMP, cex = 0.2, col = "green")
+lines(temp2017$Date.Time, temp2017$WTMP, cex = 0.2, col = "salmon")
+lines(temp2018$Date.Time, temp2018$WTMP, cex = 0.2, col = "yellow")
+lines(temp2019$Date.Time, temp2019$WTMP, cex = 0.2, col = "blue")
+lines(temp2020$Date.Time, temp2020$WTMP, cex = 0.2, col = "pink")
+lines(temp2021$Date.Time, temp2021$WTMP, cex = 0.2, col = "cyan")
+lines(temp2022$Date.Time, temp2022$WTMP, cex = 0.2, col = "black")
+#points(temp2014$Date.Time, temp2014$WTMP, cex = 0.1, col = "purple")
+legend("topleft", legend = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+       col = c("red", "orange", "purple", "green", "salmon", "yellow", "blue", "pink", "cyan", "black"), lty = 1, cex = 1)
+dev.off()
+
+png("2023/output/NOAA/KBay_Temps_2013-22.png")
+plot(temp2013$Date.Time, temp2013$WTMP, cex = 0.1, col = "red", xlab = "Date", ylab = "Temperature (°C)", ylim = c(22, 30))
+lines(temp2014$Date.Time, temp2014$WTMP, cex = 0.2, col = "orange")
+lines(temp2015$Date.Time, temp2015$WTMP, cex = 0.2, col = "purple")
+lines(temp2016$Date.Time, temp2016$WTMP, cex = 0.2, col = "green")
+lines(temp2017$Date.Time, temp2017$WTMP, cex = 0.2, col = "salmon")
+lines(temp2018$Date.Time, temp2018$WTMP, cex = 0.2, col = "yellow")
+lines(temp2019$Date.Time, temp2019$WTMP, cex = 0.2, col = "blue")
+lines(temp2020$Date.Time, temp2020$WTMP, cex = 0.2, col = "pink")
+lines(temp2021$Date.Time, temp2021$WTMP, cex = 0.2, col = "cyan")
+lines(temp2022$Date.Time, temp2022$WTMP, cex = 0.2, col = "black")
+#points(temp2014$Date.Time, temp2014$WTMP, cex = 0.1, col = "purple")
+legend("topleft", legend = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+       col = c("red", "orange", "purple", "green", "salmon", "yellow", "blue", "pink", "cyan", "black"), lty = 1, cex = 1)
+dev.off() # not as high quality as PDF version 
+```
+
+## Subset by June - July and plot 
+```{r}
+# Filter by June and July 
+temp2013_sub <- temp2013 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2014_sub <- temp2014 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2015_sub <- temp2015 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2016_sub <- temp2016 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2017_sub <- temp2017 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2018_sub <- temp2018 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2019_sub <- temp2019 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2020_sub <- temp2020 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2021_sub <- temp2021 %>%
+  filter(Date > "6-1" & Date < "7-31")
+temp2022_sub <- temp2022 %>%
+  filter(Date > "6-1" & Date < "7-31")
+
+## Plot
+pdf("2023/output/NOAA/KBay_June-July_Temps_2013-22.pdf")
+plot(temp2013_sub$Date.Time, temp2013_sub$WTMP, lwd = 2, col = "red", xlab = "Date", ylab = "Temperature (°C)", ylim = c(24.5, 28))
+lines(temp2014_sub$Date.Time, temp2014_sub$WTMP, lwd = 3, col = "orange")
+lines(temp2015_sub$Date.Time, temp2015_sub$WTMP, lwd = 3, col = "purple")
+lines(temp2016_sub$Date.Time, temp2016_sub$WTMP, lwd = 3, col = "green")
+lines(temp2017_sub$Date.Time, temp2017_sub$WTMP, lwd = 3, col = "salmon")
+lines(temp2018_sub$Date.Time, temp2018_sub$WTMP, lwd = 3, col = "yellow")
+lines(temp2019_sub$Date.Time, temp2019_sub$WTMP, lwd = 3, col = "blue")
+lines(temp2020_sub$Date.Time, temp2020_sub$WTMP, lwd = 3, col = "pink")
+lines(temp2021_sub$Date.Time, temp2021_sub$WTMP, lwd = 3, col = "cyan")
+lines(temp2022_sub$Date.Time, temp2022_sub$WTMP, lwd = 3, col = "black")
+legend("topleft", legend = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+       col = c("red", "orange", "purple", "green", "salmon", "yellow", "blue", "pink", "cyan", "black"), lty = 1, lwd = 3)
+dev.off()
+
+## Plot 2019-2022
+pdf("2023/output/NOAA/KBay_June-July_Temps_2019-22.pdf")
+plot(temp2019_sub$Date.Time, temp2019_sub$WTMP, lwd = 2, cex = 0.1, col = "blue", xlab = "Date", ylab = "Temperature (°C)", ylim = c(25, 28))
+lines(temp2020_sub$Date.Time, temp2020_sub$WTMP, lwd = 3, col = "pink")
+lines(temp2021_sub$Date.Time, temp2021_sub$WTMP, lwd = 3, col = "cyan")
+lines(temp2022_sub$Date.Time, temp2022_sub$WTMP, lwd = 3, col = "black")
+legend("topleft", legend = c("2019", "2020", "2021", "2022"),
+       col = c("blue", "pink", "cyan", "black"), lty = 1, lwd = 3)
+dev.off()
+```
+
+## Subset by June and plot 
+```{r}
+# Filter by June and find mean of water temps across June 
+temp2013_sub <- temp2013 %>%
+  filter(Date > "6-1" & Date < "6-30") 
+mean(temp2013_sub$WTMP) # 25.32604
+
+temp2014_sub <- temp2014 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2014_sub$WTMP) # 26.02876
+
+temp2015_sub <- temp2015 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2015_sub$WTMP) # 25.6387
+
+temp2016_sub <- temp2016 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2016_sub$WTMP) # 25.68542
+
+temp2017_sub <- temp2017 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2017_sub$WTMP) # 26.32454
+
+temp2018_sub <- temp2018 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2018_sub$WTMP) # 25.86768
+
+temp2019_sub <- temp2019 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2019_sub$WTMP) # 25.97749
+
+temp2020_sub <- temp2020 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2020_sub$WTMP) # 25.89259
+
+temp2021_sub <- temp2021 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2021_sub$WTMP) # 26.09007
+
+temp2022_sub <- temp2022 %>%
+  filter(Date > "6-1" & Date < "6-30")
+mean(temp2022_sub$WTMP) # 25.54752
+
+## Plot
+pdf("2023/output/NOAA/KBay_June_Temps_2013-22.pdf")
+plot(temp2013_sub$Date.Time, temp2013_sub$WTMP, lwd = 2, col = "red", xlab = "Date", ylab = "Temperature (°C)", ylim = c(24.5, 28))
+lines(temp2014_sub$Date.Time, temp2014_sub$WTMP, lwd = 3, col = "orange")
+lines(temp2015_sub$Date.Time, temp2015_sub$WTMP, lwd = 3, col = "purple")
+lines(temp2016_sub$Date.Time, temp2016_sub$WTMP, lwd = 3, col = "green")
+lines(temp2017_sub$Date.Time, temp2017_sub$WTMP, lwd = 3, col = "salmon")
+lines(temp2018_sub$Date.Time, temp2018_sub$WTMP, lwd = 3, col = "yellow")
+lines(temp2019_sub$Date.Time, temp2019_sub$WTMP, lwd = 3, col = "blue")
+lines(temp2020_sub$Date.Time, temp2020_sub$WTMP, lwd = 3, col = "pink")
+lines(temp2021_sub$Date.Time, temp2021_sub$WTMP, lwd = 3, col = "cyan")
+lines(temp2022_sub$Date.Time, temp2022_sub$WTMP, lwd = 3, col = "black")
+legend("topleft", legend = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+       col = c("red", "orange", "purple", "green", "salmon", "yellow", "blue", "pink", "cyan", "black"), lty = 1, lwd = 3)
+dev.off()
+
+## Plot 2019-2022
+pdf("2023/output/NOAA/KBay_June_Temps_2019-22.pdf")
+plot(temp2019_sub$Date.Time, temp2019_sub$WTMP, lwd = 2, cex = 0.1, col = "blue", xlab = "Date", ylab = "Temperature (°C)", ylim = c(25, 28))
+lines(temp2020_sub$Date.Time, temp2020_sub$WTMP, lwd = 3, col = "pink")
+lines(temp2021_sub$Date.Time, temp2021_sub$WTMP, lwd = 3, col = "cyan")
+lines(temp2022_sub$Date.Time, temp2022_sub$WTMP, lwd = 3, col = "black")
+legend("topleft", legend = c("2019", "2020", "2021", "2022"),
+       col = c("blue", "pink", "cyan", "black"), lty = 1, lwd = 3)
+dev.off()
+```
+
+
+
+FIGURE OUT HOW TO PLOT THIS INFO IN GGPLOT 
+
+
+

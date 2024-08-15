@@ -1,0 +1,687 @@
+---
+title: "mRNA expression (initial)"
+author: "Jill Ashey"
+date: "2024-04-01"
+output: html_document
+---
+
+This script will plot PCAs and heatmaps for expression values across 8 samples from my Mcap DT 2023 experiment. I collected molecular samples across 8 time points under high and ambient conditions. For the initial sequencing run, I sequenced n=1 from each ambient timepoint. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(genefilter)
+library(DESeq2)
+library(pheatmap)
+library(lme4)
+library(tidyverse)
+library(car)
+library(gplots)
+library(wesanderson)
+library(cowplot)
+library(gridExtra)
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("LPEseq")
+library("LPEseq")
+
+
+install.packages("remotes")
+remotes::install_github("iedenkim/LPEseq")
+```
+
+Read in data. I'm going to use the transcript count matrix first, as that one appears to have most of the info from the gff (whereas the gene count matrix has STRG gene ids)
+```{r}
+matrix <- read.csv("../../2023/data/Molecular/mRNA/Mcap_transcript_count_matrix.csv")
+matrix <- as.data.frame(matrix)
+rownames(matrix) <- matrix[,1] #set first column that contains gene names as rownames
+matrix <- matrix[,-1] # remove column w/ gene names 
+```
+
+Remove extraneous info from sample names 
+```{r}
+colnames(matrix) <- sub("X", "M", colnames(matrix))
+new_colnames <- names(matrix) %>%
+  str_replace("^(.*?)_.*", "\\1")
+
+# Assign the new column names
+names(matrix) <- new_colnames
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../../2023/data/sample_metadata/tube_meta.csv") %>%
+  filter(TubeID %in% c("M13", "M23", "M35", "M52", "M60", "M72", "M85", "M9")) %>%
+  arrange(TubeID)
+```
+
+Set variables as factors 
+```{r}
+meta$hpf <- factor(meta$hpf, levels = c("4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf", "1 hpf" ))
+```
+
+Data sanity check!
+```{r}
+meta$TubeID %in% colnames(matrix) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta$TubeID) == colnames(matrix)) #are they the same in the same order? Should be TRUE
+```
+
+Filter reads by proportion of samples containing cutoff value 
+```{r}
+ffun<-filterfun(pOverA(0.75,5))  #set up filtering parameters--LOOK INTO FILTERING PARAMETERS
+filt_outrm_poa <- genefilter((matrix), ffun) #apply filter
+sum(filt_outrm_poa) #count number of genes left
+
+filt_outrm_poa <- matrix[filt_outrm_poa,] #keep only rows that passed filter
+
+all(rownames(meta$ID) %in% colnames(filt_outrm_poa)) # must come out TRUE
+
+dim(filt_outrm_poa)
+
+#write.csv(filt_outrm_poa, file = "../output/DEG/filtered_counts.csv")
+```
+
+Plot a PCA to visualize the similarity of time points to one another 
+```{r}
+# Calculate PCA
+pca_raw <- prcomp(filt_outrm_poa)
+
+# Extract PCs
+pca <- as.data.frame(pca_raw$rotation)
+pca$TubeID <- rownames(pca)
+
+# Join PC information with metadata 
+pca_meta <- left_join(meta, pca, by = "TubeID")
+
+# Plot PCA 
+ggplot(pca_meta, aes(x = PC1, y = PC2, color = hpf, fill = hpf)) + 
+  geom_point(size = 8, shape = 21, color = "black") +  # Add black outline around points
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),           # Increase font size of axis text
+    axis.title = element_text(size = 14),          # Increase font size of axis titles
+    legend.title = element_text(size = 14),        # Increase font size of legend title
+    legend.text = element_text(size = 12)          # Increase font size of legend text
+  ) +
+  labs(
+    x = "PC1",                                     # X-axis label
+    y = "PC2",                                     # Y-axis label
+    title = "Scatter Plot with Black Outlines"     # Plot title
+  )
+```
+
+Yay a PCA!!! It looks like 
+
+
+
+There are no replicates to estimate the dispersion so I can't run DESeq2. How to assess differences in gene expression? 
+
+I found a package called LPEseq that is built to handle nonreplicate RNAseq data. [Paper](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0159182) and [github](https://github.com/iedenkim/LPEseq/) for LPEseq. 
+
+Set gene ids as row names. 
+```{r}
+row_names <- rownames(filt_outrm_poa)
+```
+
+Normalize data with LPEseq specific normalization tool 
+```{r}
+data.norm <- LPEseq::LPEseq.normalise(filt_outrm_poa)
+```
+
+To assess mean and variance of unnormalized data + normalized data, run AVplot function included in LPEseq
+```{r}
+LPEseq::AVplot(filt_outrm_poa, logged = F)
+LPEseq::AVplot(data.norm)
+```
+
+Average intensity is referring to the mean. 
+
+LPEseq can be used for 'differential expression' analysis of non-replicate samples. Only two samples can be compared at a time. Instead of pooling variance per condition, the variance is pooled between between conditions. This is not ideal but this analysis will not included in my dissertation. I just need to get an idea of the potential number of differentially expressed genes between the time points. 
+
+Only two samples/timepoints can be compared at a time. Comparisons will be made with `LPEseq.test`. With the 8 samples, there are 28 different possible combinations.  
+
+In `data.norm`, these are the columns for each time point: 
+
+- Column 1: 4 hpf
+- Column 2: 9 hpf
+- Column 3: 14 hpf
+- Column 4: 22 hpf
+- Column 5: 28 hpf
+- Column 6: 48 hpf
+- Column 7: 72 hpf
+- Column 8: 1 hpf
+
+For now, I'll be filtering by the q-value (which represents the adjusted p-value with BH multiple testing correction applied) but I could also filter by the z.stats metric. A z-score usually describes the relationship of a value to the mean of a group of values. If the z-score is high, the value is not close to the mean. Does the z-score represent something akin the log fold change? 
+
+Combination 1: 1 v 4 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,1])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v4 <- result.norep.sig
+```
+
+There are 1966 genes that are differentially expressed between 1 and 4 hpf. 
+
+Combination 2: 1 v 9 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,2])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v9 <- result.norep.sig
+```
+
+There are 2855 genes that are differentially expressed between 1 and 9 hpf.
+
+Combination 3: 1 v 14 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,3])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v14 <- result.norep.sig
+```
+
+There are 5794 genes that are differentially expressed between 1 and 14 hpf.
+
+Combination 4: 1 v 22 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,4])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v22<- result.norep.sig
+```
+
+There are 8921 genes that are differentially expressed between 1 and 22 hpf.
+
+Combination 5: 1 v 28 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,5])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v28<- result.norep.sig
+```
+
+There are 8525 genes that are differentially expressed between 1 and 28 hpf.
+
+Combination 6: 1 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v48<- result.norep.sig
+```
+
+There are 8218 genes that are differentially expressed between 1 and 48 hpf.
+
+Combination 7: 1 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,8], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x1v72<- result.norep.sig
+```
+
+There are 8309 genes that are differentially expressed between 1 and 72 hpf.
+
+Combination 8: 4 v 9 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,2])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v9<- result.norep.sig
+```
+
+There are 3564 genes that are differentially expressed between 4 and 9 hpf.
+
+Combination 9: 4 v 14 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,3])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v14<- result.norep.sig
+```
+
+There are 6509 genes that are differentially expressed between 4 and 14 hpf.
+
+Combination 10: 4 v 22 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,4])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v22<- result.norep.sig
+```
+
+There are 9160 genes that are differentially expressed between 4 and 22 hpf.
+
+Combination 11: 4 v 28 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,5])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v28<- result.norep.sig
+```
+
+There are 9170 genes that are differentially expressed between 4 and 28 hpf.
+
+Combination 12: 4 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v48<- result.norep.sig
+```
+
+There are 8994 genes that are differentially expressed between 4 and 48 hpf.
+
+Combination 13: 4 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,1], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x4v72<- result.norep.sig
+```
+
+There are 8539 genes that are differentially expressed between 4 and 72 hpf.
+
+Combination 14: 9 v 14 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,2], data.norm[,3])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x9v14<- result.norep.sig
+```
+
+There are 4164 genes that are differentially expressed between 9 and 14 hpf.
+
+Combination 15: 9 v 22 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,2], data.norm[,4])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x9v22<- result.norep.sig
+```
+
+There are 7110 genes that are differentially expressed between 9 and 22 hpf.
+
+Combination 16: 9 v 28 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,2], data.norm[,5])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x9v28<- result.norep.sig
+```
+
+There are 7416 genes that are differentially expressed between 9 and 28 hpf.
+
+Combination 17: 9 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,2], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x9v48<- result.norep.sig
+```
+
+There are 7752 genes that are differentially expressed between 9 and 48 hpf.
+
+Combination 18: 9 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,2], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x9v72<- result.norep.sig
+```
+
+There are 8143 genes that are differentially expressed between 9 and 72 hpf.
+
+Combination 19: 14 v 22 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,3], data.norm[,4])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x14v22<- result.norep.sig
+```
+
+There are 3932 genes that are differentially expressed between 14 and 22 hpf.
+
+Combination 20: 14 v 28 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,3], data.norm[,5])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x14v28<- result.norep.sig
+```
+
+There are 3852 genes that are differentially expressed between 14 and 28 hpf.
+
+Combination 21: 14 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,3], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x14v48<- result.norep.sig
+```
+
+There are 5059 genes that are differentially expressed between 14 and 48 hpf.
+
+Combination 22: 14 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,3], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x14v72<- result.norep.sig
+```
+
+There are 5458 genes that are differentially expressed between 14 and 72 hpf.
+
+Combination 23: 22 v 28 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,4], data.norm[,5])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x22v28<- result.norep.sig
+```
+
+There are 409 genes that are differentially expressed between 22 and 28 hpf.
+
+Combination 24: 22 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,4], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x22v48<- result.norep.sig
+```
+
+There are 2719 genes that are differentially expressed between 22 and 48 hpf.
+
+Combination 25: 22 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,4], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x22v72<- result.norep.sig
+```
+
+There are 4136 genes that are differentially expressed between 22 and 72 hpf.
+
+Combination 26: 28 v 48 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,5], data.norm[,6])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x28v48<- result.norep.sig
+```
+
+There are 1774 genes that are differentially expressed between 28 and 48 hpf.
+
+Combination 27: 28 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,5], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x28v72<- result.norep.sig
+```
+
+There are 3276 genes that are differentially expressed between 28 and 72 hpf.
+
+Combination 28: 48 v 72 hpf
+```{r}
+# Run differential analysis w/ no replication
+result.norep <- LPEseq::LPEseq.test(data.norm[,6], data.norm[,7])
+
+# Bind results and gene ids 
+result.norep <- cbind(row_names, result.norep)
+
+# Filter so adj p-value is < 0.05
+result.norep.sig <- subset(result.norep, q.value<0.05,) #identify significant adj pvalues with 5%FDR
+dim(result.norep.sig)
+
+# Save as specific df. The "x" is at the beginning of the df name so R knows the object is a df 
+x48v72<- result.norep.sig
+```
+
+There are 1289 genes that are differentially expressed between 48 and 72 hpf.
+
+Lots of data. I'm not sure how best to represent the potential gene expression overlap between all of the combinations. Let's check out the intersection of `x1v4`, `x1v9`, and `x1v14`. 
+```{r}
+x1v4.DEGs <- as.data.frame(x1v4[,1])
+colnames(x1v4.DEGs) <- "DEGs"
+length(t(unique(x1v4.DEGs)))
+
+x1v9.DEGs <- as.data.frame(x1v9[,1])
+colnames(x1v9.DEGs) <- "DEGs"
+length(t(unique(x1v9.DEGs)))
+
+x1v14.DEGs <- as.data.frame(x1v14[,1])
+colnames(x1v14.DEGs) <- "DEGs"
+length(t(unique(x1v14.DEGs)))
+
+my_list <- list(x1v4.DEGs, x1v9.DEGs, x1v14.DEGs)
+venn(my_list)
+# A = 1v4; B = 1v9; C = 1v14
+
+Intersect <- venn(my_list, intersection=TRUE)
+isect <- attr(Intersect, "intersection")
+str(isect)
+```
+
+Between `x1v4`, `x1v9`, and `x1v14`, there are 580 DEGs that are shared between these comparisons. I could do other comparisons of interest as well. 

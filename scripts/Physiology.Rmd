@@ -1,0 +1,333 @@
+---
+title: "Physiology"
+output: html_document
+date: "2023-09-26"
+---
+
+This script analyzes and plots data for Developmental Timeseries 2023 physiology measurements including protein, carbohydrates, and lipids, and correlations between these variables. This script is based off of AH's [script](https://github.com/AHuffmyer/SymbioticIntegration/blob/main/Mcap2021/Scripts/Physiology.Rmd).
+
+# Set up 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("readr")) install.packages("readr")
+if (!require("stringr")) install.packages("stringr")
+if (!require("gridExtra")) install.packages("gridExtra")
+if (!require("grid")) install.packages("grid")
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("lattice")) install.packages("lattice")
+if (!require("Rmisc")) install.packages("Rmisc")
+if (!require("ggpubr")) install.packages("ggpubr")
+if (!require("lsmeans")) install.packages("lsmeans")
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("car")) install.packages("car")
+if (!require("ggpubr")) install.packages("ggpubr")
+if (!require("kableExtra")) install.packages("kableExtra")
+if (!require("ggcorrplot")) install.packages("ggcorrplot")
+if (!require("corrr")) install.packages("corrr")
+if (!require("GGally")) install.packages("GGally")
+if (!require("cowplot")) install.packages("cowplot")
+
+library(dplyr)
+library(readr)
+library(stringr)
+library(gridExtra)
+library(grid)
+library(ggplot2)
+library(lattice)
+library(Rmisc)
+library(ggpubr)
+library(lsmeans)
+library(tidyverse)
+library(car)
+library(kableExtra)
+library(ggcorrplot)
+library(corrr)
+library(GGally)
+library(cowplot)
+library(ggsignif)
+library(ggstatsplot)
+
+
+getwd()
+```
+
+# Set plot theme 
+
+```{r}
+custom_theme<-theme_classic() + 
+  theme(axis.text = element_text(size=12, color="black"), 
+        axis.title=element_text(size=12, color="black", face="bold"), 
+        legend.text=element_text(size=12, color="black"), 
+        legend.title=element_text(size=12, face="bold", color="black"))
+```
+
+# Protein
+
+## Load data 
+
+Read in datafiles
+
+```{r}
+protein <- read.csv("../2023/data/Physiology/SolubleProtein_Data.csv")
+
+prot_meta <- read.csv("../2023/data/Physiology/SolubleProtein_Meta.csv")
+prot_meta <- prot_meta %>%
+  mutate(Homo_vol = ifelse(Sample.Type == "Sample", 25, NA)) %>%
+  mutate(Resusp_vol = ifelse(Sample.Type == "Sample", 500, NA)) 
+
+meta <- read.csv("../2023/data/sample_metadata/tube_meta.csv")
+```
+
+## Prepare dataframes 
+
+Remove unneeded rows from meta dataframe 
+
+```{r}
+meta <- meta %>%
+  filter(Metric == "Physiology")
+```
+
+Merge Files and rename columns
+
+```{r}
+protein <- merge(prot_meta, protein, by = c("Well", "Run"))
+protein <- left_join(protein, meta, by=c("TubeID"))
+
+# Blank correction for each run separately
+
+Blank <- protein %>% 
+  filter(Sample.Type == "Blank") %>%
+  summarise(blk.avg = mean(x562))
+
+protein$abs.corr <- protein$x562 - Blank$blk.avg
+```
+
+Plot regressions for each run.  
+
+```{r}
+protein %>% 
+  filter(Sample.Type == "Standard")%>%
+
+  ggplot(aes(x=Concentration, y=abs.corr))+
+  facet_wrap(~ Run)+
+  ylab("Absorbance (nm)")+ xlab("Protein (ug/mL)") + 
+  geom_point()+
+  ggtitle("Run")+
+  geom_smooth(method = "lm") +
+  stat_regline_equation(label.y = 1.0, aes(label = after_stat(eq.label))) +
+  custom_theme
+```
+
+Run a loop to extract regression for each run and calculate protein concentration.  
+
+```{r}
+run_list<-c("1", "2", "3", "4", "5", "6", "7", "8")
+
+df_protein = data.frame()
+
+for (run in run_list) {
+
+  #subset data
+Standard <- protein %>% 
+  filter(Sample.Type == "Standard")%>%
+  filter(Run==run)
+  
+#generate standard curve equation
+lmstandard <- lm (Concentration ~ abs.corr, data = Standard)
+lmsummary <- summary(lmstandard) 
+
+#select samples
+Samples <- protein %>% #subsetting Samples
+  filter(Sample.Type == "Sample") %>%
+  filter(Run==run)
+
+#calculate concentration
+Samples$Concentration <- predict(lmstandard, newdata = Samples) #using model to get concentration
+
+#add run column
+#Samples$Run<-run
+
+#normalize to homogenate volume
+Samples$Protein.ug <- Samples$Concentration * (Samples$Resusp_vol / 1000) * (25/Samples$Homo_vol)
+
+#join dataframes
+df <- data.frame(Samples)
+df_protein <- rbind(df_protein,df)
+
+} 
+```
+
+
+Plot results 
+
+```{r}
+# Keep only Mcap results
+df_protein_mcap <- df_protein %>%
+  filter(Species == "Montipora capitata")
+
+# Order the 'hpf' variable in a specific order
+df_protein_mcap$hpf <- factor(df_protein_mcap$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+
+Protein.Plot <- df_protein_mcap%>%
+  ggplot(aes(x=hpf, y=Protein.ug, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  scale_fill_manual(values = c("blue", "red", "gray")) +
+  custom_theme; Protein.Plot
+```
+
+## Calculate protein/ug/larvae 
+
+Calculate protein/ug/larvae
+```{r}
+df_protein_mcap<-df_protein_mcap%>%
+  dplyr::select(TubeID, Treatment, Fraction, Protein.ug, hpf, EmbryosPerTube)%>%
+  group_by(Fraction, Treatment, hpf)%>%
+  mutate(Protein.ug.larvae = Protein.ug/EmbryosPerTube)%>%
+  na.omit()
+  #mutate(Protein.mg = Protein.ug/1000)%>%
+  #mutate(Protein.mg.larvae = Protein.mg/EmbryosPerTube)
+  #dplyr::summarise(mean_protein=mean(Protein.ug.larvae))
+
+
+
+# %>%
+#   spread(Fraction, mean_protein)%>%
+#   mutate(ratio=Host/Holobiont)%>%
+#   mutate(sym_holo_ratio=Symbiont/Holobiont)%>%
+#   na.omit()
+```
+
+### Plot data 
+
+Plot holo, host and sym protein 
+```{r}
+holo.protein.plot <- df_protein_mcap%>%
+  filter(Fraction == "Holobiont")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; holo.protein.plot
+
+host.protein.plot <- df_protein_mcap%>%
+  filter(Fraction == "Host")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; host.protein.plot
+
+sym.protein.plot <- df_protein_mcap%>%
+  filter(Fraction == "Symbiont")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; sym.protein.plot
+```
+
+Remove outliers 
+```{r}
+remove_outliers <- function(x) {
+  qnt <- quantile(x, probs=c(.25, .75))
+  H <- 1.5 * IQR(x)
+  x[x > (qnt[2] + H) | x < (qnt[1] - H)] <- NA
+  return(x)
+}
+
+df_protein_mcap_clean <- df_protein_mcap %>%
+  group_by(Treatment, Fraction, hpf) %>%
+  mutate(Protein.ug.larvae = remove_outliers(Protein.ug.larvae)) %>%
+  ungroup() %>%
+  na.omit(Protein.ug.larvae)
+```
+
+Plot holo, host and sym protein with outliers removed 
+```{r}
+holo.protein.plot <- df_protein_mcap_clean%>%
+  filter(Fraction == "Holobiont")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; holo.protein.plot
+
+host.protein.plot <- df_protein_mcap_clean%>%
+  filter(Fraction == "Host")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; host.protein.plot
+
+sym.protein.plot <- df_protein_mcap_clean%>%
+  filter(Fraction == "Symbiont")%>%
+  ggplot(aes(x=hpf, y=Protein.ug.larvae, fill = Treatment)) +
+  geom_boxplot(width=.5, outlier.shape= NA, position = position_dodge(width = 0.4)) +
+  geom_point(pch = 21, position=position_jitterdodge(dodge.width=0.4)) +
+  xlab("hpf") + 
+  #facet_grid(. ~ Fraction) +  # Use facet_grid to separate bars by 'Fraction'
+  #ylab(expression(bold("Soluble Protein " (ug)))) + #Axis titles
+  scale_fill_manual(values = c("blue", "red")) +
+  custom_theme; sym.protein.plot
+```
+
+```{r}
+sym <- df_protein_mcap_clean %>%
+  filter(Fraction == "Symbiont")
+
+res.aov <- aov(Protein.ug.larvae ~ Treatment*hpf, data = sym)
+summary(res.aov)
+
+holo <- df_protein_mcap_clean %>%
+  filter(Fraction == "Holobiont")
+
+res.aov <- aov(Protein.ug.larvae ~ Treatment*hpf, data = holo)
+summary(res.aov)
+
+host <- df_protein_mcap_clean %>%
+  filter(Fraction == "Host")
+
+res.aov <- aov(Protein.ug.larvae ~ Treatment*hpf, data = host)
+summary(res.aov)
+
+TukeyHSD(res.aov)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
