@@ -1,0 +1,127 @@
+Tube ID,BowlID,Date,Time,Total Volume (uL),hpf,Metric,PreservationMethod,StorageMethod,Box,Treatment,Notes
+M100,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+M101,682,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M102,799,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M103,464,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M104,879,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M105,774,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M106,555,20230705,23:37,100,4 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M107,464,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M108,629,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M109,682,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M110,555,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M111,634,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M112,879,20230706,4:20,100,9,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M113,464,20230706,11:18,200,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M114,629,20230706,11:18,200,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M115,774,20230706,11:18,200,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M116,799,20230706,11:18,100,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M117,682,20230706,11:18,200,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M118,634,20230706,11:18,200,16,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+M119,682,20230706,15:27,200,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M120,879,20230706,15:27,100,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M121,464,20230706,15:27,100,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M122,555,20230706,15:27,200,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M123,774,20230706,15:27,200,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M124,799,20230706,15:27,100,20,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M125,464,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M126,629,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M127,555,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M128,799,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M129,682,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M130,774,20230706,19:38,200,24,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M131,879,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Lower pH relative to other bowls; may be due to higher density 
+M132,629,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M133,634,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M134,774,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M135,555,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M136,464,20230707,7:44,200,36,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,
+M95,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+M96,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+M97,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+M98,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+M99,NA,20230705,20:35,100,1 hpf,Molecular,DNA/RNA Shield,-80C,Box 6,Ambient,Did not record bowl ID for these samples
+P100,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+P101,682,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P102,799,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P103,464,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P104,879,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P105,774,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P106,555,20230705,23:37,100,4 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P107,464,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P108,629,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P109,682,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P110,555,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P111,634,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P112,879,20230706,4:20,100,9,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P113,464,20230706,11:18,200,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P114,629,20230706,11:18,200,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P115,774,20230706,11:18,200,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P116,799,20230706,11:18,100,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P117,682,20230706,11:18,200,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P118,634,20230706,11:18,200,16,Physiology,Snap-freeze,-80C,Box 5,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+P119,682,20230706,15:27,200,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P120,879,20230706,15:27,100,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P121,464,20230706,15:27,100,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P122,555,20230706,15:27,200,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P123,774,20230706,15:27,200,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P124,799,20230706,15:27,100,20,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P125,464,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P126,629,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P127,555,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P128,799,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P129,682,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P130,774,20230706,19:38,200,24,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P131,879,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,Lower pH relative to other bowls; may be due to higher density 
+P132,629,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P133,634,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P134,774,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P135,555,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P136,464,20230707,7:44,200,36,Physiology,Snap-freeze,-80C,Box 5,Ambient,
+P95,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+P96,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+P97,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+P98,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+P99,NA,20230705,20:35,100,1 hpf,Physiology,Snap-freeze,-80C,Box 5,Ambient,Did not record bowl ID for these samples
+S100,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
+S101,682,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S102,799,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S103,464,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S104,879,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S105,774,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S106,555,20230705,23:37,100,4 hpf,Size,20% Zfix,4C,Box 7,Ambient,
+S107,464,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S108,629,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S109,682,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S110,555,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S111,634,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S112,879,20230706,4:20,100,9,Size,20% Zfix,4C,Box 7,Ambient,
+S113,464,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S114,629,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S115,774,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S116,799,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S117,682,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S118,634,20230706,11:18,100,16,Size,20% Zfix,4C,Box 7,Ambient,"Embryos are starting to become more buoyant, more difficult to get concentrated sample"
+S119,682,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S120,879,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S121,464,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S122,555,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S123,774,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S124,799,20230706,15:27,100,20,Size,20% Zfix,4C,Box 7,Ambient,
+S125,464,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S126,629,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S127,555,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S128,799,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S129,682,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S130,774,20230706,19:38,100,24,Size,20% Zfix,4C,Box 7,Ambient,
+S131,879,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,Lower pH relative to other bowls; may be due to higher density 
+S132,629,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,
+S133,634,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,
+S134,774,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,
+S135,555,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,
+S136,464,20230707,7:44,100,36,Size,20% Zfix,4C,Box 7,Ambient,
+S95,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
+S96,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
+S97,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
+S98,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
+S99,NA,20230705,20:35,100,1 hpf,Size,20% Zfix,4C,Box 7,Ambient,Did not record bowl ID for these samples
