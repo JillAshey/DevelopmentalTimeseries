@@ -1,0 +1,174 @@
+---
+title: "lncRNA - mRNA interactions"
+author: "Jill Ashey"
+date: "2024-11-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_filt))
+```
+
+Quick co-expression analysis on subset of data 
+```{r}
+lcount <- read.csv("../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")[1:10,]
+rownames(lcount) <- lcount[,1] #set first column that contains gene names as rownames
+lcount <- lcount[,-1] # remove column w/ gene names 
+
+mcount <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")[1:10,]
+rownames(mcount) <- mcount[,1] #set first column that contains gene names as rownames
+mcount <- mcount[,-1] # remove column w/ gene names 
+
+## I need to normalize the counts... do later 
+
+# Combine the datasets
+combined_data <- rbind(mcount, lcount)
+
+# Calculate correlation matrix
+cor_matrix <- cor(t(combined_data), method="pearson")
+
+# Separate mRNA-lncRNA correlations
+mRNA_indices <- 1:nrow(mcount)
+lncRNA_indices <- (nrow(mcount) + 1):(nrow(mcount) + nrow(lcount))
+mRNA_lncRNA_cor <- cor_matrix[mRNA_indices, lncRNA_indices]
+ggcorrplot(mRNA_lncRNA_cor)
+
+# Function to calculate p-value from correlation coefficient
+cor_to_pvalue <- function(r, n) {
+  t <- r * sqrt((n - 2) / (1 - r^2))
+  2 * pt(-abs(t), df = n - 2)
+}
+
+# Calculate p-values
+n <- ncol(combined_data)  # number of samples
+pvalue_matrix <- matrix(NA, nrow = nrow(mRNA_lncRNA_cor), ncol = ncol(mRNA_lncRNA_cor))
+for (i in 1:nrow(mRNA_lncRNA_cor)) {
+  for (j in 1:ncol(mRNA_lncRNA_cor)) {
+    pvalue_matrix[i, j] <- cor_to_pvalue(mRNA_lncRNA_cor[i, j], n)
+  }
+}
+
+# Adjust p-values
+adjusted_pvalues <- p.adjust(as.vector(pvalue_matrix), method = "BH")
+adjusted_pvalue_matrix <- matrix(adjusted_pvalues, nrow = nrow(pvalue_matrix), ncol = ncol(pvalue_matrix))
+rownames(adjusted_pvalue_matrix) <- rownames(mRNA_lncRNA_cor)
+colnames(adjusted_pvalue_matrix) <- colnames(mRNA_lncRNA_cor)
+
+# Set thresholds
+cor_threshold <- 0.9
+pvalue_threshold <- 0.05
+
+# Find significant correlations
+significant_cors <- which(abs(mRNA_lncRNA_cor) >= cor_threshold & adjusted_pvalue_matrix < pvalue_threshold, arr.ind = TRUE)
+
+# Create a data frame of significant correlations
+significant_results <- data.frame(
+  mRNA = rownames(mRNA_lncRNA_cor)[significant_cors[,1]],
+  lncRNA = colnames(mRNA_lncRNA_cor)[significant_cors[,2]],
+  correlation = mRNA_lncRNA_cor[significant_cors],
+  adjusted_pvalue = adjusted_pvalue_matrix[significant_cors]
+)
+
+# Sort by absolute correlation (descending)
+significant_results <- significant_results[order(-abs(significant_results$correlation)),]
+
+# Print summary
+print(paste("Number of significant correlations:", nrow(significant_results)))
+print(head(significant_results))
+```
+
+should we be doing these kinds of analysis on all genes? just expressed genes or just DEGs? I should also be splitting up by hpf 
+
+Use Huang et al. 2019 lncRNA functional identification as guidance 
+
+
+
+
+
+Expression of genes over time
+```{r}
+lcount <- read.csv("../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")
+rownames(lcount) <- lcount[,1] #set first column that contains gene names as rownames
+lcount <- lcount[,-1] # remove column w/ gene names 
+
+mcount <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+rownames(mcount) <- mcount[,1] #set first column that contains gene names as rownames
+mcount <- mcount[,-1] # remove column w/ gene names 
+
+# Combine mRNA and lncRNA data
+combined_counts <- rbind(mcount, lcount)
+
+# Normalize the counts (you might want to use a more sophisticated normalization method depending on your data)
+normalized_counts <- log2(combined_counts + 1)
+
+# Transpose normalized_counts so that samples are rows and genes are columns
+normalized_counts_t <- as.data.frame(t(normalized_counts))
+
+# Add hpf information
+normalized_counts_t$hpf <- meta_filt$hpf[match(rownames(normalized_counts_t), meta_filt$TubeID)]
+
+# Melt the data frame
+melted_data <- normalized_counts_t %>%
+  rownames_to_column("sample") %>%
+  pivot_longer(cols = -c(sample, hpf), names_to = "gene", values_to = "expression")
+
+# Calculate mean expression for each gene at each time point
+mean_expression <- melted_data %>%
+  group_by(gene, hpf) %>%
+  summarize(mean_expression = mean(expression, na.rm = TRUE)) %>%
+  ungroup()
+
+# Order hpf factor levels
+mean_expression$hpf <- factor(mean_expression$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+
+# Prepare data for heatmap
+heatmap_data <- mean_expression %>%
+  pivot_wider(names_from = hpf, values_from = mean_expression) %>%
+  as.data.frame()
+rownames(heatmap_data) <- heatmap_data$gene
+heatmap_data$gene <- NULL
+
+# Create heatmap
+# pheatmap(heatmap_data, 
+#          show_rownames = FALSE,  # Don't show gene names as there are too many
+#          cluster_cols = FALSE,   # Don't cluster columns to maintain time order
+#          main = "Gene Expression Over Time")
+
+# Calculate variance for each gene
+gene_variance <- apply(heatmap_data, 1, var)
+
+# Select top 20 most variable genes
+top_genes <- names(sort(gene_variance, decreasing = TRUE))[1:20]
+
+# Prepare data for line plot
+line_plot_data <- mean_expression %>%
+  filter(gene %in% top_genes)
+
+# Create line plot
+ggplot(line_plot_data, aes(x = hpf, y = mean_expression, group = gene, color = gene)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  labs(title = "Expression of Top 20 Most Variable Genes Over Time",
+       x = "Hours Post Fertilization",
+       y = "Mean Log2 Expression")
+```
+
+
+
+
+

@@ -1,0 +1,152 @@
+---
+title: "lncRNA differential expression"
+author: "Jill Ashey"
+date: "2024-11-13"
+output: html_document
+---
+
+This script provides details on lncRNA differential expression across time point in Mcap development.  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# The following setting is important, do not omit.
+options(stringsAsFactors = FALSE) #Set Strings to character
+```
+
+Load packages 
+```{r}
+library(genefilter)
+library(DESeq2)
+library(pheatmap)
+library(lme4)
+library(tidyverse)
+library(car)
+library(gplots)
+library(wesanderson)
+library(cowplot)
+library(gridExtra)
+library(grid)
+```
+
+Load counts data
+```{r}
+counts <- read.delim("../data/Molecular/lncRNA/Mcap_lncRNA_count_matrix.isoform.counts.matrix", header = T)
+counts <- as.data.frame(counts)
+rownames(counts) <- counts[,1] #set first column that contains gene names as rownames
+counts <- counts[,-1] # remove column w/ gene names 
+```
+
+We have 32 columns as expected. Remove extra info from the column names 
+```{r}
+colnames(counts) <- gsub("^X", "", sub("_.*", "", colnames(counts)))
+colnames(counts) <- gsub("kallisto.trim.", "M", colnames(counts))
+```
+
+Remove any genes that have 0 counts across all samples (ie these lncRNAs were not expressed)
+```{r}
+dim(counts) 
+
+counts<-counts %>%
+     mutate(Total = rowSums(.[, 1:32]))%>%
+    filter(!Total==0)%>%
+    dplyr::select(!Total)
+
+dim(counts)
+```
+
+Started with 31504 lncRNAs, the total number in the annotation. After removing genes with 0s across all samples, 31326 lncRNAs are left. 
+
+Filter data with pOverA. There are 32 samples with an n=4 samples per timepoint. Genes will pass filtering if they are present in 4/32=0.125 of the samples because we expect differential expression by timepoint. Also filtering for a minimum gene count of 10, such that ~12% of the samples must have a gene count of >10 in order for the gene to remain in the data set.  
+
+```{r}
+filt <- filterfun(pOverA(0.12,10))
+
+#create filter for the counts data
+gfilt <- genefilter(counts, filt)
+
+#identify genes to keep by count filter
+gkeep <- counts[gfilt,]
+
+#identify gene lists
+gn.keep <- rownames(gkeep)
+
+#gene count data filtered in PoverA, P percent of the samples have counts over A
+counts_filt <- as.data.frame(counts[which(rownames(counts) %in% gn.keep),])
+
+#How many rows do we have before and after filtering?
+nrow(counts) #Before
+nrow(counts_filt) #After
+
+# Save filtered counts matrix 
+write.csv(counts_filt, file = "../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")
+```
+
+Before filtering, there were 31326 lncRNAs; after filtering, there were 20608 lncRNAs.  
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_filt))
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts_filt <- counts_filt[, meta_filt$TubeID]
+
+# Sanity check! 
+meta_filt$TubeID %in% colnames(counts_filt) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt$TubeID) == colnames(counts_filt)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt$hpf <- factor(meta_filt$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+```
+
+Set filtered counts to integer 
+```{r}
+counts_filt[] = lapply(counts_filt, as.integer)
+str(counts_filt)
+```
+
+Construct DESeq data set looking at gene expression across time points. 
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts_filt, colData = meta_filt, design = ~hpf)
+```
+
+Visualize expression
+```{r}
+rld <- vst(gdds, blind=FALSE) #apply a regularized log transformation to minimize effects of small counts and normalize wrt library size
+head(assay(rld), 3) #view data
+sampleDists <- dist(t(assay(rld))) #calculate distance matix
+sampleDistMatrix <- as.matrix(sampleDists) #distance matrix
+rownames(sampleDistMatrix) <- colnames(rld) #assign row names
+colnames(sampleDistMatrix) <- NULL #assign col names
+pheatmap(sampleDistMatrix, #plot matrix of expression similarity
+         clustering_distance_rows=sampleDists, #cluster rows
+         clustering_distance_cols=sampleDists) #cluster columns
+
+plotPCA(rld, intgroup = c("hpf")) #plot PCA of samples with all data
+
+pcaData <- plotPCA(rld, intgroup = c("hpf"), returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  geom_point(size = 3) + 
+  geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed()
+```
+
+PCA separates beautifully!! There are a couple of outliers -- M14 from 4hpf and M61 from 28 hpf. Will need to remove these before proceeding. 
+
+
+
+
+
