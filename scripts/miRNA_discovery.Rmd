@@ -1,0 +1,62 @@
+---
+title: "miRNA discovery - mirdeep2"
+author: "Jill Ashey"
+date: "2024-11-18"
+output: html_document
+---
+
+I ran mirdeep2 on R1 reads from DT Mcap 2023 experiment. The output was files with novel and known miRNAs. In this code, I filter the results to identify putative miRNAs!
+
+NOTE: these miRNAs are from semi-raw reads - I still need to trim adapters from certain reads. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(rvest)
+```
+Load novel miRNAs 
+```{r}
+novel <- read.csv("../data/Molecular/smRNA/mirdeep2/all_novel.csv", header = T)
+
+length(unique(novel$provisional.id)) # 752 unique genomic ids
+length(unique(novel$consensus.mature.sequence)) # 625 unique miRNA sequences
+```
+
+Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
+```{r}
+novel_filt <- novel %>%
+  filter(miRDeep2.score > 10) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+
+# Save csv 
+write.csv(novel_filt, "../data/Molecular/smRNA/mirdeep2/novel_filt.csv")
+```
+
+Load the known miRNAs
+```{r}
+known <- read.csv("../data/Molecular/smRNA/mirdeep2/all_known.csv")
+length(unique(known$tag.id)) # 14 unique genomic ids
+length(unique(known$consensus.mature.sequence)) # 14 unique miRNA sequences
+```
+
+Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
+```{r}
+known_filt <- known %>%
+  filter(miRDeep2.score > 0) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+
+# Save csv 
+write.csv(known_filt, "../data/Molecular/smRNA/mirdeep2/known_filt.csv")
+```
+
+
+

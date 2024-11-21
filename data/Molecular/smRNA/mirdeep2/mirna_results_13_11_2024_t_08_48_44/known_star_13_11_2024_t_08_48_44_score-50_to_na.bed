@@ -1,0 +1,18 @@
+browser position Montipora_capitata_HIv3___Scaffold_14:8316916-8316938
+browser hide all
+track name="notTrackname.known_miRNAs" description="known miRNAs detected by miRDeep2 for notTrackname" visibility=2
+itemRgb="On";
+Montipora_capitata_HIv3___Scaffold_14	8316916	8316938	Montipora_capitata_HIv3___Scaffold_14_1018693	592.7	-	8316916	8316938	0,0,255
+Montipora_capitata_HIv3___Scaffold_2	46381126	46381148	Montipora_capitata_HIv3___Scaffold_2_96328	491.5	+	46381126	46381148	255,0,0
+Montipora_capitata_HIv3___Scaffold_8	39483027	39483049	Montipora_capitata_HIv3___Scaffold_8_565039	346.3	-	39483027	39483049	0,0,255
+Montipora_capitata_HIv3___Scaffold_11	2527611	2527629	Montipora_capitata_HIv3___Scaffold_11_792219	200.3	-	2527611	2527629	0,0,255
+Montipora_capitata_HIv3___Scaffold_8	66591742	66591766	Montipora_capitata_HIv3___Scaffold_8_586427	61.3	-	66591742	66591766	0,0,255
+Montipora_capitata_HIv3___Scaffold_14	2986537	2986560	Montipora_capitata_HIv3___Scaffold_14_992284	25.6	+	2986537	2986560	255,0,0
+Montipora_capitata_HIv3___Scaffold_12	38747255	38747279	Montipora_capitata_HIv3___Scaffold_12_910953	2.1	-	38747255	38747279	0,0,255
+Montipora_capitata_HIv3___Scaffold_1	8020792	8020815	Montipora_capitata_HIv3___Scaffold_1_4183	1.5	+	8020792	8020815	255,0,0
+Montipora_capitata_HIv3___Scaffold_13	37017436	37017457	Montipora_capitata_HIv3___Scaffold_13_951627	-4.6	+	37017436	37017457	255,0,0
+Montipora_capitata_HIv3___Scaffold_6	17708457	17708476	Montipora_capitata_HIv3___Scaffold_6_434438	-4.9	-	17708457	17708476	0,0,255
+Montipora_capitata_HIv3___Scaffold_3	19489081	19489100	Montipora_capitata_HIv3___Scaffold_3_199857	-7.8	-	19489081	19489100	0,0,255
+Montipora_capitata_HIv3___Scaffold_10	36740708	36740727	Montipora_capitata_HIv3___Scaffold_10_659126	-9.8	+	36740708	36740727	255,0,0
+Montipora_capitata_HIv3___Scaffold_9	10212195	10212214	Montipora_capitata_HIv3___Scaffold_9_593152	-17.5	+	10212195	10212214	255,0,0
+Montipora_capitata_HIv3___Scaffold_9	23210997	23211016	Montipora_capitata_HIv3___Scaffold_9_621158	-18.3	-	23210997	23211016	0,0,255
