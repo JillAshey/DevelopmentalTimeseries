@@ -13,16 +13,18 @@ library(tidyverse)
 
 Looking at lncRNA mRNA correlations 
 ```{r}
-lcount <- read.csv("../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")[90:110,]
+lcount <- read.csv("../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")[1:10,]
 rownames(lcount) <- lcount[,1] #set first column that contains gene names as rownames
 lcount <- lcount[,-1] # remove column w/ gene names 
+lcount_1hpf <- lcount[,c("M6", "M7", "M8", "M9")]
 
-mcount <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")[100:120,]
+mcount <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")[1:10,]
 rownames(mcount) <- mcount[,1] #set first column that contains gene names as rownames
 mcount <- mcount[,-1] # remove column w/ gene names 
+mcount_1hpf <- mcount[,c("M6", "M7", "M8", "M9")]
 
-lcount_numeric <- apply(lcount, 2, as.numeric)
-mcount_numeric <- apply(mcount, 2, as.numeric)
+lcount_numeric <- apply(lcount_1hpf, 2, as.numeric)
+mcount_numeric <- apply(mcount_1hpf, 2, as.numeric)
 
 calculate_pcc <- function(lncRNA, mRNA) {
   result <- cor.test(lncRNA, mRNA, method = "pearson")
@@ -43,11 +45,60 @@ results_df <- as.data.frame(results_df)
 results_df$lncRNA_mRNA <- rownames(results_df)
 rownames(results_df) <- NULL
 
-co_expressed_pairs <- results_df[abs(results_df$pcc) > -0.3 & results_df$p_value < 0.05, ]
+#co_expressed_pairs <- results_df[abs(results_df$pcc) > 0.5 & results_df$p_value < 0.05, ]
 co_expressed_pairs <- results_df[results_df$p_value < 0.05, ]
 ```
 
 Huang et al. 2017 used abs value of correlation as 0.95
 Lopes et al. 2019 used 0.8
 Yin et al. 2020 (oral cancer) used top 0.05 percentile
+
+NEED TO SEPARATE BY LIFE STAGE
+also maybe need to vst or rlog counts data to normalize 
+
+A positive correlation between an mRNA and an lncRNA indicates a strong relationship between their expression levels. This means that as the expression of one increases, the expression of the other tends to increase as well. Here's what this correlation suggests:
+Co-expression: The mRNA and lncRNA are likely to be co-expressed, meaning they are transcribed together or in response to similar stimuli12.
+Regulatory Relationship: The lncRNA may be involved in regulating the expression of the mRNA, or vice versa. This could occur through various mechanisms:
+Transcriptional regulation: The lncRNA might influence the transcription of the mRNA gene3.
+Post-transcriptional regulation: The lncRNA could affect mRNA stability or processing3.
+Epigenetic regulation: The lncRNA might be involved in modifying the chromatin state around the mRNA gene2.
+Functional Association: The correlated expression suggests that the lncRNA and mRNA may be involved in related biological processes or pathways4.
+
+Plot a correlation example 
+```{r}
+lncRNA_name <- "Montipora_capitata_HIv3___Scaffold_7:10436852-10446721"
+lncRNA_expression <- lcount_1hpf[lncRNA_name, , drop = FALSE]
+
+mRNA_name <- "Montipora_capitata_HIv3___RNAseq.g8204.t1"
+mRNA_expression <- mcount_1hpf[mRNA_name, , drop = FALSE]
+
+test <- rbind(lncRNA_expression, mRNA_expression)
+
+test <- tibble::rownames_to_column(test, var = "ID")
+
+test_long <- pivot_longer(
+  test,
+  cols = starts_with("M"),   # Select all columns starting with "M"
+  names_to = "Sample",       # New column for the variable names
+  values_to = "Value"        # New column for the values
+)
+
+comparison_data <- test_long %>%
+  pivot_wider(names_from = ID, values_from = Value)
+
+colnames(comparison_data) <- c("Sample", "lncRNA", "mRNA")
+
+ggplot(comparison_data, aes(x = lncRNA, y = mRNA, color = Sample)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    x = "Montipora_capitata_HIv3___Scaffold_190:50628-63004",
+    y = "Montipora_capitata_HIv3___TS.g35745.t1",
+    title = "Comparison of Values Between Two IDs"
+  ) +
+  theme_minimal()
+```
+
+
+
 
