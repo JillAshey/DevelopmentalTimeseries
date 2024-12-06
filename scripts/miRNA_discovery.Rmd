@@ -32,9 +32,12 @@ novel_filt <- novel %>%
   #filter(star.read.count >10) %>%
   filter(significant.randfold.p.value == "yes") #%>%
   #na.omit()
+length(unique(novel_filt$provisional.id))
+length(unique(novel_filt$consensus.mature.sequence))
+yay <- list(novel_filt$provisional.id)
 
 # Save csv 
-write.csv(novel_filt, "../data/Molecular/smRNA/mirdeep2/novel_filt.csv")
+#write.csv(novel_filt, "../data/Molecular/smRNA/mirdeep2/novel_filt.csv")
 ```
 
 Load the known miRNAs
@@ -53,9 +56,11 @@ known_filt <- known %>%
   #filter(star.read.count >10) %>%
   filter(significant.randfold.p.value == "yes") #%>%
   #na.omit()
+length(unique(known_filt$tag.id))
+length(unique(known_filt$consensus.mature.sequence))
 
 # Save csv 
-write.csv(known_filt, "../data/Molecular/smRNA/mirdeep2/known_filt.csv")
+#write.csv(known_filt, "../data/Molecular/smRNA/mirdeep2/known_filt.csv")
 ```
 
 
