@@ -1,0 +1,188 @@
+---
+title: "miRNA differential expression"
+author: "Jill Ashey"
+date: "2024-12-07"
+output: html_document
+---
+
+This script provides details on miRNA differential expression across time point in Mcap development.  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# The following setting is important, do not omit.
+options(stringsAsFactors = FALSE) #Set Strings to character
+```
+
+Load packages 
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("DESeq2")
+
+#library(genefilter)
+library(DESeq2)
+library(pheatmap)
+library(lme4)
+library(tidyverse)
+library(car)
+library(gplots)
+library(wesanderson)
+library(cowplot)
+library(gridExtra)
+library(grid)
+```
+
+As of 12/7/24, I am still working through some trimming issues but I ran the mirdeep2 pipeline on some preliminary trimmed reads. Only samples that were sequenced from the first batch got counts successfully. I am going to replicate the samples that worked so I can run the DE analysis. I will later come back with the correctly trimmed reads and redo. 
+
+Load counts data
+```{r}
+counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+counts <- as.data.frame(counts)
+```
+
+Select specific columns for analysis. 
+```{r}
+counts <- counts %>%
+  select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+```
+
+Replicate columns
+```{r}
+counts_new <- counts %>%
+  mutate(s09rep1 = s09.norm. + 10) %>%
+  mutate(s09rep2 = s09.norm. + 20) %>%
+  mutate(s09rep4 = s09.norm. + 5) %>%
+  mutate(s13rep1 = s13.norm. + 10) %>%
+  mutate(s13rep2 = s13.norm. + 20) %>%
+  mutate(s13rep3 = s13.norm. + 5) %>%
+  mutate(s23rep1 = s23.norm. + 10) %>%
+  mutate(s23rep2 = s23.norm. + 20) %>%
+  mutate(s23rep3 = s23.norm. + 5) %>%
+  mutate(s35rep1 = s35.norm. + 10) %>%
+  mutate(s35rep2 = s35.norm. + 20) %>%
+  mutate(s35rep3 = s35.norm. + 5) %>%
+  mutate(s52rep1 = s35.norm. + 10) %>%
+  mutate(s52rep2 = s52.norm. + 20) %>%
+  mutate(s52rep3 = s52.norm. + 5) %>%
+  mutate(s60rep1 = s60.norm. + 10) %>%
+  mutate(s60rep2 = s60.norm. + 20) %>%
+  mutate(s60rep3 = s60.norm. + 5) %>%
+  mutate(s72rep1 = s72.norm. + 10) %>%
+  mutate(s72rep2 = s72.norm. + 20) %>%
+  mutate(s72rep3 = s72.norm. + 5) %>%
+  mutate(s85rep1 = s85.norm. + 10) %>%
+  mutate(s85rep2 = s85.norm. + 20) %>%
+  mutate(s85rep3 = s85.norm. + 5)
+
+# Rename cols to match metadata 
+colnames(counts_new) <- c("miRNA", "M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85", "M6", "M7", "M8", "M10", "M11", "M14", "M24", "M26", "M28", "M36", "M37", "M39", "M47", "M48", "M51", "M61", "M62", "M63", "M73", "M74", "M75", "M86", "M87", "M88")
+
+counts_new <- unique(counts_new)
+```
+
+Make miRNA col the row names
+```{r}
+rownames(counts_new) <- make.names(counts_new[,1], unique = TRUE)
+counts_new <- counts_new[,-1]
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_new))
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts_new <- counts_new[, meta_filt$TubeID]
+
+# Sanity check! 
+meta_filt$TubeID %in% colnames(counts_new) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt$TubeID) == colnames(counts_new)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt$hpf <- factor(meta_filt$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+```
+
+Set filtered counts to integer 
+```{r}
+counts_new[] = lapply(counts_new, as.integer)
+str(counts_new)
+```
+
+Construct DESeq data set looking at gene expression across time points. 
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts_new, colData = meta_filt, design = ~hpf)
+```
+
+Visualize expression
+```{r}
+# Transpose the data for PCA
+counts_t <- t(counts_new)
+
+# Merge with metadata
+pca_data <- merge(meta_filt, counts_t, by.x = "TubeID", by.y = "row.names")
+
+# Perform PCA
+pca_result <- prcomp(pca_data[,-(1:5)], scale. = TRUE)
+
+# Create the plot
+pca_df <- as.data.frame(pca_result$x)
+pca_df$hpf <- pca_data$hpf
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = hpf)) +
+  geom_point(size = 3, alpha = 0.7) +
+  #geom_text_repel(aes(label = rownames(pca_df)), size = 3, max.overlaps = 10) +
+  theme_minimal() +
+  labs(title = "PCA of miRNA Counts",
+       x = paste0("PC1 (", round(summary(pca_result)$importance[2,1] * 100, 1), "%)"),
+       y = paste0("PC2 (", round(summary(pca_result)$importance[2,2] * 100, 1), "%)")) +
+  theme(legend.position = "right")
+```
+
+Run test using the LRT to look for effect of lifestage as a whole across our experiment. There is only one main effect, so the reduced model is just the intercept.    
+```{r, message = FALSE}
+DEG <- DESeq(gdds, test="LRT", reduced=~1)
+```
+
+Filter by adjusted p value <0.05, this is generated by the LRT test statistic. 
+```{r}
+DEG_results<-results(DEG)
+DEG_results <- as.data.frame(subset(DEG_results, padj<0.05))
+
+DEG_results$gene <- rownames(DEG_results)
+rownames(DEG_results) <- NULL
+dim(DEG_results)
+```
+
+Conduct VST transformation for visualization.  
+```{r}
+DEG_results_vst <- gdds[unique(DEG_results$gene)]
+dim(DEG_results_vst)
+
+DEG_results_vst <- varianceStabilizingTransformation(DEG_results_vst) 
+```
+
+Generate a PCA     
+```{r}
+pcaData_DEG <- plotPCA(DEG_results_vst, intgroup = c("hpf"), returnData = TRUE)
+
+percentVar_DEG <- round(100 * attr(pcaData_DEG, "percentVar"))
+ggplot(pcaData_DEG, aes(PC1, PC2, color = hpf, label = name)) + 
+  geom_point(size = 3) + 
+  geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar_DEG[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar_DEG[2], "% variance")) +
+  coord_fixed()
+```
+
+Basically the same as above. 
