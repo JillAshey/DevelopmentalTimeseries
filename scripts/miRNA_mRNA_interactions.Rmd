@@ -1,0 +1,117 @@
+---
+title: "miRNA mRNA interactions"
+author: "Jill Ashey"
+date: "2024-12-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+Workflow 
+- read in counts and average across a timepoint - mRNA and miRNA
+- read in miranda info 
+
+Read in mRNA count data
+```{r}
+mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+
+# Select specific columns 
+mrna_counts <- mrna_counts %>%
+  select(X, M9, M13, M23, M35, M52, M60, M72, M85)
+
+# Rename cols based on hpf 
+colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Read in miRNA count data 
+```{r}
+mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+mirna_counts <- as.data.frame(mirna_counts)
+
+# Select specific columns 
+mirna_counts <- mirna_counts %>%
+  select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+
+# Rename cols based on hpf 
+colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Read in miranda data 
+```{r}
+miranda <- read.delim("../output/Molecular/smRNA/mirdeep2/miranda_strict_all_1kb_parsed_mcap.txt", header = F)
+colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "subject_start_end", "total_bp_shared", "query_similar", "subject_similar")
+
+# Format miranda df 
+miranda$miRNA <- sub("^>", "", miranda$miRNA)  # Remove leading ">"
+miranda$mRNA <- sub("ID=", "", miranda$mRNA)
+miranda$mRNA <- sub("::.*", "", miranda$mRNA)
+```
+
+Identify interactions - only doing a subset because computationally intense
+```{r}
+specific_mirna <- "Montipora_capitata_HIv3___Scaffold_1_4183"
+
+interactions <- miranda %>%
+  filter(miRNA == specific_mirna) %>%
+  select(miRNA, mRNA) #%>%
+  #slice(100:150)  # Adjust this number as needed
+```
+
+Extract this info 
+```{r}
+mirna_data <- mirna_counts %>%
+  filter(mirna %in% interactions$miRNA) %>%
+  pivot_longer(cols = -mirna, names_to = "hpf", values_to = "count") %>%
+  mutate(type = "miRNA") %>%
+  distinct(mirna, hpf, .keep_all = TRUE)  # Remove any duplicates
+
+
+mrna_data <- mrna_counts %>%
+  filter(gene %in% interactions$mRNA) %>%
+  pivot_longer(cols = -gene, names_to = "hpf", values_to = "count") %>%
+  mutate(type = "mRNA") %>%
+  distinct(gene, hpf, .keep_all = TRUE)  # Remove any duplicates
+```
+
+Combine and reshape data
+```{r}
+plot_data <- bind_rows(
+  mirna_data %>% rename(id = mirna),
+  mrna_data %>% rename(id = gene)
+) %>%
+  mutate(hpf = as.numeric(str_remove(hpf, "_hpf")))
+```
+
+Plot 
+```{r}
+plot_pair <- function(mirna, mrna) {
+  pair_data <- plot_data %>%
+    filter(id %in% c(mirna, mrna))
+  
+  ggplot(pair_data, aes(x = hpf, y = count, color = type, group = id)) +
+    geom_line() +
+    geom_point() +
+    scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
+    scale_y_log10() +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 5)) +
+    labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
+         title = paste("miRNA-mRNA Interaction:", mirna, "-", mrna),
+         color = "Type") +
+    theme(legend.position = "bottom")
+}
+
+# Step 5: Generate and display plots for each pair
+for (i in 1:nrow(interactions)) {
+  mirna <- interactions$miRNA[i]
+  mrna <- interactions$mRNA[i]
+  print(plot_pair(mirna, mrna))
+}
+```
+
+To do: GO enrichment for mirna targets 
+
