@@ -49,26 +49,30 @@ colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "s
 miranda$miRNA <- sub("^>", "", miranda$miRNA)  # Remove leading ">"
 miranda$mRNA <- sub("ID=", "", miranda$mRNA)
 miranda$mRNA <- sub("::.*", "", miranda$mRNA)
+
+# Count how many mRNAs each miRNA interacts with 
+interact_summary <- miranda %>%
+  group_by(miRNA) %>%
+  summarize(mRNA_count = n_distinct(mRNA))
 ```
 
 Identify interactions - only doing a subset because computationally intense
 ```{r}
-specific_mirna <- "Montipora_capitata_HIv3___Scaffold_1_4183"
+specific_mirna <- "Montipora_capitata_HIv3___Scaffold_8_586427"
 
 interactions <- miranda %>%
   filter(miRNA == specific_mirna) %>%
-  select(miRNA, mRNA) #%>%
-  #slice(100:150)  # Adjust this number as needed
+  select(miRNA, mRNA) %>%
+  dplyr::slice(100:120)  # Adjust this number as needed
 ```
 
-Extract this info 
+Extract this info from counts dfs
 ```{r}
 mirna_data <- mirna_counts %>%
   filter(mirna %in% interactions$miRNA) %>%
   pivot_longer(cols = -mirna, names_to = "hpf", values_to = "count") %>%
   mutate(type = "miRNA") %>%
   distinct(mirna, hpf, .keep_all = TRUE)  # Remove any duplicates
-
 
 mrna_data <- mrna_counts %>%
   filter(gene %in% interactions$mRNA) %>%
@@ -80,8 +84,8 @@ mrna_data <- mrna_counts %>%
 Combine and reshape data
 ```{r}
 plot_data <- bind_rows(
-  mirna_data %>% rename(id = mirna),
-  mrna_data %>% rename(id = gene)
+  mirna_data %>% dplyr::rename(id = mirna),
+  mrna_data %>% dplyr::rename(id = gene)
 ) %>%
   mutate(hpf = as.numeric(str_remove(hpf, "_hpf")))
 ```
@@ -92,26 +96,57 @@ plot_pair <- function(mirna, mrna) {
   pair_data <- plot_data %>%
     filter(id %in% c(mirna, mrna))
   
-  ggplot(pair_data, aes(x = hpf, y = count, color = type, group = id)) +
-    geom_line() +
-    geom_point() +
-    scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
-    scale_y_log10() +
-    theme_minimal() +
-    theme(plot.title = element_text(size = 5)) +
-    labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
-         title = paste("miRNA-mRNA Interaction:", mirna, "-", mrna),
-         color = "Type") +
-    theme(legend.position = "bottom")
+  # ggplot(pair_data, aes(x = hpf, y = count, color = type, group = id)) +
+  #   geom_line() +
+  #   geom_point() +
+  #   scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
+  #   scale_y_log10() +
+  #   theme_minimal() +
+  #   theme(plot.title = element_text(size = 5)) +
+  #   labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
+  #        title = paste("miRNA-mRNA Interaction:", mirna, "-", mrna),
+  #        color = "Type") +
+  #   theme(legend.position = "bottom")
+  
+  ggplot(plot_data, aes(x = hpf, y = count, group = id)) +
+  geom_line(aes(color = ifelse(type == "miRNA", "miRNA", id)), size = 1) +
+  geom_point(aes(color = ifelse(type == "miRNA", "miRNA", id))) +
+  scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
+  scale_y_log10() +
+  scale_color_manual(values = c("miRNA" = "black", 
+                                setNames(rainbow(n = length(unique(interactions$mRNA))), 
+                                         unique(interactions$mRNA)))) +
+  theme_minimal() +
+  labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
+       title = paste("miRNA-mRNA Interactions for", specific_mirna),
+       color = "Gene") +
+  theme(
+    plot.title = element_text(size = 14),
+    legend.position = "right",
+    legend.text = element_text(size = 8)
+  )
 }
 
-# Step 5: Generate and display plots for each pair
+# Generate and display plots for each pair
 for (i in 1:nrow(interactions)) {
   mirna <- interactions$miRNA[i]
   mrna <- interactions$mRNA[i]
   print(plot_pair(mirna, mrna))
 }
+
+ggsave("../output/Molecular/miRNA_mRNA_interactions/specific_miRNA_targets.pdf", plot = last_plot(), height = 10, width = 25)
 ```
 
 To do: GO enrichment for mirna targets 
+
+
+
+Look into these papers for analyses:
+
+- https://www.nature.com/articles/s42003-024-07092-7
+- https://genome.cshlp.org/content/22/6/1163 
+- https://www.3d-gene.com/en/service/analysis/ana_004.html 
+
+
+
 
