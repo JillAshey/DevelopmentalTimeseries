@@ -1,0 +1,368 @@
+---
+title: "mirtarrnaseq"
+author: "Jill Ashey"
+date: "2024-12-27"
+output: html_document
+---
+
+Running mirtarrnaseq - following part 2 of their [vignette](https://www.bioconductor.org/packages/release/bioc/vignettes/mirTarRnaSeq/inst/doc/mirTarRnaSeq.pdf).
+.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(mirTarRnaSeq)
+library(reshape2)
+library(igraph)
+library(ggraph)
+library(tidygraph)
+
+#options(stringsAsFactors = FALSE) #Set Strings to character
+```
+
+The format for the miRNA and mRNA files should be: gene/miRNA as column 1, log2FC as column 2, and pvalue as column 3. I am comparing all timepoints to 1hpf (the first timepoint). 
+
+Read in mRNA file and format. I have 7 files to read in that represent each timepoint compared to 1hpf. 
+```{r}
+file_path <- "../output/Molecular/mRNA/"
+
+# Get a list of all files matching the pattern
+file_list <- list.files(path = file_path, pattern = "^mRNA_DE_results_all_1v", full.names = TRUE)
+
+# Read in file, select and rename columns, store in list 
+data_list <- lapply(file_list, function(file) {
+  df <- read.csv(file)
+  df_selected <- df[, c("X", "log2FoldChange", "padj")]
+  names(df_selected) <- c("gene", "log2FoldChange", "pvalue")
+  return(df_selected)
+})
+
+names(data_list) <- tools::file_path_sans_ext(basename(file_list))
+```
+
+Get mRNAs with particular fold change
+```{r}
+mrna_data <- one2OneRnaMiRNA(data_list, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)
+
+mrna_data_fc <- one2OneRnaMiRNA(data_list, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)$foldchanges
+
+mrna_data_p <- one2OneRnaMiRNA(data_list, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)$pvalues
+```
+The `one2OneRnaMiRNA` function grabs the gene name, FC and pvalue information from each df to produce a set of genes that are significant in any of the gene lists. It then filters each df to extract the FC and pvalues of the significant genes present in all input dfs. 
+
+Read in miRNA file and format. 
+```{r}
+file_path_mi <- "../output/Molecular/smRNA/"
+
+# Get a list of all files matching the pattern
+file_list_mi <- list.files(path = file_path_mi, pattern = "^miRNA_DE_results_all_1v", full.names = TRUE)
+
+# Read in file, select and rename columns, store in list 
+data_list_mi <- lapply(file_list_mi, function(file) {
+  df <- read.csv(file)
+  df_selected <- df[, c("X", "log2FoldChange", "padj")]
+  names(df_selected) <- c("gene", "log2FoldChange", "pvalue")
+  return(df_selected)
+})
+
+names(data_list_mi) <- tools::file_path_sans_ext(basename(file_list_mi))
+```
+
+Get mRNAs with particular fold change
+```{r}
+mirna_data <- one2OneRnaMiRNA(data_list_mi, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)
+
+mirna_data_fc <- one2OneRnaMiRNA(data_list_mi, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)$foldchanges
+
+mirna_data_p <- one2OneRnaMiRNA(data_list_mi, gene_colname = "gene", fc_colname = "log2FoldChange", pthreshold = 0.05)$pvalues
+```
+
+Get mRNA miRNA correlation 
+```{r}
+# subset mrna data 
+mrna_subset <- mrna_data_fc[1:20, , drop = FALSE]
+rownames(mrna_subset) <- rownames(mrna_data_fc)[1:20]
+
+corr0 <- corMirnaRna(mrna_subset, mirna_data_fc, method = "pearson")
+
+# all data
+#corr0 <- corMirnaRna(mrna_data_fc, mirna_data_fc, method = "pearson")
+```
+This function is calculating the Pearson correlation coefficient for each miRNA mRNA combination. Pearson correlation coefficient (the value in the resulting df) is calculated by taking the sum of the products of the differences of each data point from their respective means, divided by the product of the standard deviations of each variable.
+
+I need to subset the data because the memory exceeds what my computer can do when running this function. 
+
+Subset the mRNA data as chunks and run the chunks instead of the whole df
+```{r}
+# Function to process a chunk
+process_chunk <- function(mrna_chunk, mirna_data) {
+  corr_chunk <- corMirnaRna(mrna_chunk, mirna_data, method = "pearson")
+  return(corr_chunk)
+}
+
+# Set chunk size
+chunk_size <- 1000
+
+# Calculate number of chunks
+num_chunks <- ceiling(nrow(mrna_data_fc) / chunk_size)
+
+# Initialize list to store results
+corr_list <- list()
+
+# Store original miRNA rownames
+mirna_rownames <- rownames(mirna_data_fc)
+
+# Process data in chunks
+for (i in 1:num_chunks) {
+  start_idx <- (i-1) * chunk_size + 1
+  end_idx <- min(i * chunk_size, nrow(mrna_data_fc))
+  
+  mrna_chunk <- mrna_data_fc[start_idx:end_idx, , drop = FALSE]
+  
+  # Ensure row names are set for both dataframes
+  rownames(mrna_chunk) <- rownames(mrna_data_fc)[start_idx:end_idx]
+  
+  corr_chunk <- process_chunk(mrna_chunk, mirna_data_fc)
+  
+  corr_list[[i]] <- corr_chunk
+  
+  cat("Processed chunk", i, "of", num_chunks, "\n")
+}
+
+# Combine results
+corr_0 <- do.call(rbind, corr_list)
+
+# Replace miRNA_1, miRNA_2, etc. with original miRNA names
+corr_0$V1 <- rep(mirna_rownames, nrow(mrna_data_fc))
+
+# Display the first few rows of the result
+print(head(corr_0))
+
+```
+
+
+
+Make background distribution correlation
+```{r}
+#outs <- sampCorRnaMirna(mrna_data_fc, mirna_data_fc, Shrounds = 100, Srounds = 1000)
+```
+
+Similarly to above, I have so much mRNA data that R is struggling to handle it with memory. I need to break into chunks again 
+```{r}
+chunk_size <- 1000  # Adjust based on your system's memory capacity
+num_chunks <- ceiling(nrow(mrna_data_fc) / chunk_size)
+
+# Function to process a chunk
+process_chunk <- function(mrna_chunk, mirna_data, Shrounds, Srounds) {
+  sampCorRnaMirna(mrna_chunk, mirna_data, Shrounds = Shrounds, Srounds = Srounds)
+}
+
+# Initialize list to store results
+outs_list <- list()
+
+# Process data in chunks
+for (i in 1:num_chunks) {
+  start_idx <- (i-1) * chunk_size + 1
+  end_idx <- min(i * chunk_size, nrow(mrna_data_fc))
+  
+  mrna_chunk <- mrna_data_fc[start_idx:end_idx, , drop = FALSE]
+  
+  outs_chunk <- process_chunk(mrna_chunk, mirna_data_fc, Shrounds = 100, Srounds = 1000)
+  
+  outs_list[[i]] <- outs_chunk
+  
+  cat("Processed chunk", i, "of", num_chunks, "\n")
+}
+
+# Combine results
+outs <- do.call(rbind, outs_list)
+```
+
+Make density plots for background and correlation in our data 
+```{r}
+mirRnaDensityCor(corr0, outs)
+```
+
+Grey is background distribution and red is our data. 
+
+```{r}
+sig_corrs <- threshSig(corr_0, outs, pvalue = 0.05)
+```
+
+Read in miranda data
+```{r}
+miranda <- read.delim("../output/Molecular/smRNA/mirdeep2/miranda_strict_all_1kb_parsed_mcap.txt", header = F)
+colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "subject_start_end", "total_bp_shared", "query_similar", "subject_similar")
+
+# Format miranda df 
+miranda$miRNA <- sub("^>", "", miranda$miRNA)  # Remove leading ">"
+miranda$mRNA <- sub("ID=", "", miranda$mRNA)
+miranda$mRNA <- sub("::.*", "", miranda$mRNA)
+```
+
+Select specific columns and rename for the package to work
+```{r}
+miranda <- miranda %>%
+  dplyr::select(miRNA, mRNA, score, energy, query_similar, subject_similar) %>%
+  dplyr::rename(V1 = miRNA, V2 = mRNA, V3 = score, V4 = energy, V5 = query_similar, V6 = subject_similar)
+```
+
+Correlation heatmap 
+```{r}
+# Function to process a chunk
+process_chunk <- function(mrna_chunk, mirna_data, threshold, miranda) {
+  corMirnaRnaMiranda(mrna_chunk, mirna_data, threshold, miranda)
+}
+
+# Set chunk size
+chunk_size <- 1000
+
+# Calculate number of chunks
+num_chunks <- ceiling(nrow(mrna_data_fc) / chunk_size)
+
+# Initialize list to store results
+corr_list <- list()
+
+# Process data in chunks
+for (i in 1:num_chunks) {
+  start_idx <- (i-1) * chunk_size + 1
+  end_idx <- min(i * chunk_size, nrow(mrna_data_fc))
+  
+  mrna_chunk <- mrna_data_fc[start_idx:end_idx, , drop = FALSE]
+  
+  corr_chunk <- process_chunk(mrna_chunk, mirna_data_fc, -0.7, miranda)
+  
+  corr_list[[i]] <- corr_chunk
+  
+  cat("Processed chunk", i, "of", num_chunks, "\n")
+}
+
+# Combine results
+newcorr <- do.call(rbind, corr_list)
+
+# Plot and save
+pdf("../output/Molecular/miRNA_mRNA_interactions/mirtarrnaseq_correlations.pdf", height = 20, width = 25)
+mirRnaHeatmap(newcorr)
+dev.off()
+
+# Save data as csv
+write.csv(newcorr, "../output/Molecular/miRNA_mRNA_interactions/mirtarrnaseq_correlations_data.csv")
+```
+
+Plot using igraph
+```{r}
+subset <- newcorr[1:100,]
+
+# Step 1: Create the graph from the data frame
+g <- graph_from_data_frame(subset[, c("V1", "V2", "value")], directed = FALSE)
+
+# Step 2: Add edge attributes
+E(g)$weight <- abs(E(g)$value)  # Use absolute PCC for edge weight
+E(g)$color <- ifelse(E(g)$value > 0, "blue", "red")  # Blue for positive, red for negative correlations
+
+# Step 3: Add node attributes
+V(g)$type <- ifelse(V(g)$name %in% subset$V1, "miRNA", "mRNA")
+
+# Convert to tbl_graph for ggraph
+g_tbl <- as_tbl_graph(g)
+
+# Step 4: Create the plot
+ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
+  geom_node_point(aes(color = type), size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  scale_edge_width(range = c(0.5, 3)) +
+  scale_color_manual(values = c("miRNA" = "lightblue", "mRNA" = "lightgreen", 
+                                 "Positive correlation" = "blue", 
+                                 "Negative correlation" = "red")) +
+  theme_graph() +
+  labs(title = "miRNA-mRNA Interaction Network",
+       subtitle = "Edge width represents |PCC|, color represents correlation direction")
+
+```
+
+
+
+Read in mRNA count data
+```{r}
+mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+
+# Select specific columns 
+mrna_counts <- mrna_counts %>%
+  select(X, M9, M13, M23, M35, M52, M60, M72, M85)
+
+# Rename cols based on hpf 
+colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Read in miRNA count data 
+```{r}
+mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+mirna_counts <- as.data.frame(mirna_counts)
+
+# Select specific columns 
+mirna_counts <- mirna_counts %>%
+  select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+
+# Rename cols based on hpf 
+colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Join count with correlation data and save 
+```{r}
+new_df <- newcorr %>%
+  full_join(mirna_counts, by = c("V1" = "mirna"))
+
+new_df <- new_df %>%
+  full_join(mrna_counts, by = c("V2" = "gene"))
+
+write.csv(new_df, "../output/Molecular/miRNA_mRNA_interactions/mirtarrnaseq_correlations_counts_data.csv")
+```
+
+Subset data and plot 
+```{r}
+newcorr_one <- newcorr %>%
+  filter(V1 == c("Montipora_capitata_HIv3___Scaffold_14_1018693"))
+
+mirna_subset <- mirna_counts[mirna_counts$mirna %in% newcorr_one$V1, ]
+mrna_subset <- mrna_counts[mrna_counts$gene %in% newcorr_one$V2, ]
+```
+
+```{r}
+mirna_melted <- melt(mirna_subset, id.vars = "mirna", variable.name = "hpf", value.name = "count")
+mirna_melted <- mirna_melted %>% dplyr::rename(gene = mirna) 
+mirna_melted$type <- "miRNA"  # Add a column to indicate type
+
+# Melt the mRNA data
+mrna_melted <- melt(mrna_subset, id.vars = "gene", variable.name = "hpf", value.name = "count")
+mrna_melted$type <- "mRNA"  # Add a column to indicate type
+
+# Combine both melted dataframes
+combined_data <- rbind(mirna_melted, mrna_melted)
+
+# Merge combined_data with interaction information
+ggplot(combined_data, aes(x = hpf, y = count, group = gene)) +
+  geom_line(aes(color = gene)) + 
+  geom_point(aes(color = gene)) +
+  scale_x_discrete(limits = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")) +
+  scale_y_log10() +
+  labs(x = "Hours Post Fertilization (hpf)", y = "Count (log scale)", 
+       title = "miRNA and mRNA Interactions Over Time") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14),
+    legend.position = "right",
+    legend.text = element_text(size = 8)
+  )
+```
+
+Need to make better plots
+
+
+
+
+
+
+
+
+

@@ -58,10 +58,12 @@ interact_summary <- miranda %>%
 
 Identify interactions - only doing a subset because computationally intense
 ```{r}
-specific_mirna <- "Montipora_capitata_HIv3___Scaffold_8_586427"
+specific_mirna <- "Montipora_capitata_HIv3___Scaffold_14_992284"
+specific_mrna <- "Montipora_capitata_HIv3___RNAseq.g23994.t1"
 
 interactions <- miranda %>%
   filter(miRNA == specific_mirna) %>%
+  filter(mRNA == specific_mrna) %>%
   select(miRNA, mRNA) %>%
   dplyr::slice(100:120)  # Adjust this number as needed
 ```
@@ -138,6 +140,10 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/specific_miRNA_targets.pdf",
 ```
 
 To do: GO enrichment for mirna targets 
+
+
+
+
 
 
 
