@@ -15,6 +15,8 @@ devtools::install_github("stemangiola/tidyHeatmap")
 library(tidyverse)
 library(topGO)
 library(tidyHeatmap)
+library(purrr)
+library(scales)
 ```
 
 Read in correlation data generated from mirTarRnaSeq 
@@ -329,5 +331,108 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_netw
 
 Next step: plot expression over time for miRNAs and their target mRNAs 
 
-Read in counts 
+Read in mRNA count data
+```{r}
+mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+
+# Select specific columns 
+mrna_counts <- mrna_counts %>%
+  dplyr::select(X, M9, M13, M23, M35, M52, M60, M72, M85)
+
+# Rename cols based on hpf 
+colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Read in miRNA count data 
+```{r}
+mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+mirna_counts <- as.data.frame(mirna_counts)
+
+# Select specific columns 
+mirna_counts <- mirna_counts %>%
+  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+
+# Rename cols based on hpf 
+colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+```
+
+Extract this info from counts dfs
+```{r}
+mirna_data <- mirna_counts %>%
+  filter(mirna %in% GO_En_sig_gene_mirna$V1) %>%
+  pivot_longer(cols = -mirna, names_to = "hpf", values_to = "count") %>%
+  mutate(type = "miRNA") %>%
+  distinct(mirna, hpf, .keep_all = TRUE)  # Remove any duplicates
+
+mrna_data <- mrna_counts %>%
+  filter(gene %in% GO_En_sig_gene_mirna$X.query) %>%
+  pivot_longer(cols = -gene, names_to = "hpf", values_to = "count") %>%
+  mutate(type = "mRNA") %>%
+  distinct(gene, hpf, .keep_all = TRUE)  # Remove any duplicates
+```
+
+Plot the miRNAs with their interacting mRNAs over time 
+```{r}
+create_mirna_plot <- function(specific_mirna) {
+  # Find interacting mRNAs
+  interacting_mrnas <- corr %>%
+    dplyr::filter(V1 == specific_mirna) %>%
+    dplyr::pull(V2)
+  
+  # Extract count data
+  mirna_counts <- mirna_data %>%
+    dplyr::filter(mirna == specific_mirna) %>%
+    dplyr::select(hpf, count, type)
+  
+  mrna_counts <- mrna_data %>%
+    dplyr::filter(gene %in% interacting_mrnas) %>%
+    dplyr::select(hpf, count, type, gene)
+  
+  # Combine data
+  combined_data <- bind_rows(
+    mirna_counts,
+    mrna_counts
+  ) %>%
+    mutate(hpf = as.numeric(gsub("_hpf", "", hpf)))
+  
+  # Create the plot
+  ggplot(combined_data, aes(x = hpf, y = count, color = type, group = interaction(type, gene))) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    scale_x_continuous(breaks = unique(combined_data$hpf)) +
+    scale_y_log10(labels = scales::comma) +
+    scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange")) +
+    labs(title = paste("Expression of", specific_mirna, "and its interacting mRNAs"),
+         subtitle = "During early development",
+         x = "Hours post fertilization",
+         y = "Count (log scale)",
+         color = "RNA type") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+      plot.subtitle = element_text(size = 12, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      legend.title = element_text(face = "bold", size = 12),
+      legend.text = element_text(size = 10),
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1)
+    )
+}
+
+# Generate plots for all miRNAs
+all_mirnas <- unique(mirna_data$mirna)
+all_plots <- map(all_mirnas, create_mirna_plot)
+
+# Save plots to a PDF file
+pdf("../output/Molecular/miRNA_mRNA_interactions/all_mirna_plots.pdf", width = 10, height = 8)
+for(plot in all_plots) {
+  print(plot)
+}
+dev.off()
+
+```
+
+
 
