@@ -32,7 +32,7 @@ corr_gene_mirna <- corr %>%
 
 Read in annotation file and make tab file for topGO
 ```{r}
-annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt") %>%
+annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt")%>%
   dplyr::select(X.query, GOs) %>%
   mutate(across(everything(), ~ na_if(., "-")))
 
@@ -288,40 +288,46 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_MF.p
 ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_MF.png", plot = mf_plot, height = 25, width = 20)
 ```
 
+Create network plot that shows the miRNAs that regulate mRNAs 
 ```{r}
-# Set input
-GO_En_sig_gene_mirna$Term <- as.factor(GO_En_sig_gene_mirna$Term)
-GO_En_sig_gene_mirna$V1 <- as.factor(GO_En_sig_gene_mirna$V1)
-GO_En_sig_gene_mirna$Fisher <- as.double(GO_En_sig_gene_mirna$Fisher)
+annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt")
 
-# subset 
-sub <- GO_En_sig_gene_mirna %>%
-  dplyr::select(Term, V1, Fisher) 
+test <- annot %>%
+  full_join(GO_En_sig_gene_mirna, by = "X.query") %>%
+  na.omit() %>%
+  dplyr::select(X.query, Description, Term, Preferred_name, V1, value) %>%
+  dplyr::filter(V1 %in% c("Montipora_capitata_HIv3___Scaffold_10_729473", "Montipora_capitata_HIv3___Scaffold_151_1075760", "Montipora_capitata_HIv3___Scaffold_11_826703")) # add this if you want to look at a specific miRNA of interest; otherwise, comment out 
 
-blah <- sub %>%
-  heatmap(V1, Term, Fisher, scale = "row"); blah
+# Create the graph from the data frame
+g <- graph_from_data_frame(test[, c("V1", "Description", "value")], directed = FALSE)
+
+# Add edge attributes
+E(g)$weight <- abs(E(g)$value)  # Use absolute PCC for edge weight
+E(g)$color <- ifelse(E(g)$value > 0, "blue", "red")  # Blue for positive, red for negative correlations - in this case, we only have negative correlations 
+
+# Add node attributes
+V(g)$type <- ifelse(V(g)$name %in% test$V1, "miRNA", "mRNA")
+
+# Convert to tbl_graph for ggraph
+g_tbl <- as_tbl_graph(g)
+
+# Create plot
+network_plot <- ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
+  geom_node_point(aes(color = type), size = 5) +
+  #geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3, family = "Helvetica") + # Specify font here
+  scale_edge_width(range = c(0.5, 3)) +
+  scale_color_manual(values = c("miRNA" = "lightblue", "mRNA" = "lightgreen", 
+                                 "Positive correlation" = "blue", 
+                                 "Negative correlation" = "red")) +
+  theme_graph();network_plot 
+
+#ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_network.pdf", plot = network_plot, height = 49, width = 40)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_network_preferrednames_cluster_example.png", plot = network_plot, height = 30, width = 25)
 ```
 
+Next step: plot expression over time for miRNAs and their target mRNAs 
 
-
-```{r}
-mtcars_tidy <- 
-    mtcars |> 
-    as_tibble(rownames="Car name") |> 
-    
-    # Scale
-    mutate_at(vars(-`Car name`, -hp, -vs), scale) |>
-    
-    # tidyfy
-    pivot_longer(cols = -c(`Car name`, hp, vs), names_to = "Property", values_to = "Value")
-
-mtcars_tidy
-
-mtcars_heatmap <- 
-    mtcars_tidy %>%
-    heatmap(`Car name`, Property, Value,    scale = "row"   ) %>%
-    annotation_tile(hp); mtcars_heatmap
-```
-
-
+Read in counts 
 

@@ -139,7 +139,6 @@ for (i in 1:nrow(interactions)) {
 ggsave("../output/Molecular/miRNA_mRNA_interactions/specific_miRNA_targets.pdf", plot = last_plot(), height = 10, width = 25)
 ```
 
-To do: GO enrichment for mirna targets 
 
 
 
