@@ -298,7 +298,8 @@ test <- annot %>%
   full_join(GO_En_sig_gene_mirna, by = "X.query") %>%
   na.omit() %>%
   dplyr::select(X.query, Description, Term, Preferred_name, V1, value) %>%
-  dplyr::filter(V1 %in% c("Montipora_capitata_HIv3___Scaffold_10_729473", "Montipora_capitata_HIv3___Scaffold_151_1075760", "Montipora_capitata_HIv3___Scaffold_11_826703")) # add this if you want to look at a specific miRNA of interest; otherwise, comment out 
+  dplyr::filter(V1 == "Montipora_capitata_HIv3___Scaffold_14_1018693") #%>%
+  #dplyr::filter(V1 %in% c("Montipora_capitata_HIv3___Scaffold_10_729473", "Montipora_capitata_HIv3___Scaffold_151_1075760", "Montipora_capitata_HIv3___Scaffold_11_826703")) # add this if you want to look at a specific miRNA of interest; otherwise, comment out 
 
 # Create the graph from the data frame
 g <- graph_from_data_frame(test[, c("V1", "Description", "value")], directed = FALSE)
@@ -315,18 +316,26 @@ g_tbl <- as_tbl_graph(g)
 
 # Create plot
 network_plot <- ggraph(g_tbl, layout = "fr") +
-  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
-  geom_node_point(aes(color = type), size = 5) +
-  #geom_node_text(aes(label = name), repel = TRUE, size = 3) +
-  geom_node_text(aes(label = name), repel = TRUE, size = 3, family = "Helvetica") + # Specify font here
-  scale_edge_width(range = c(0.5, 3)) +
-  scale_color_manual(values = c("miRNA" = "lightblue", "mRNA" = "lightgreen", 
-                                 "Positive correlation" = "blue", 
-                                 "Negative correlation" = "red")) +
-  theme_graph();network_plot 
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.7) +
+  geom_node_point(aes(color = type), size = 15) +
+  geom_node_text(aes(label = name), repel = TRUE, size = 10, 
+                 family = "Arial", fontface = "bold") +
+  scale_edge_width(range = c(2, 6), name = "Correlation Strength") +
+  scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange", 
+                                "Positive correlation" = "#3C5488", 
+                                "Negative correlation" = "#DC0000"),
+                     name = "Node/Edge Type") +
+  theme_graph(base_family = "Arial") +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.caption = element_text(size = 8, hjust = 1)
+  ); network_plot
 
 #ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_network.pdf", plot = network_plot, height = 49, width = 40)
-ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_network_preferrednames_cluster_example.png", plot = network_plot, height = 30, width = 25)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/GO_en_sig_miRNA_targets_network_Montipora_capitata_HIv3___Scaffold_14_1018693.png", plot = network_plot, height = 20, width = 15)
 ```
 
 Next step: plot expression over time for miRNAs and their target mRNAs 

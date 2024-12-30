@@ -45,7 +45,7 @@ counts <- as.data.frame(counts)
 Select specific columns for analysis. 
 ```{r}
 counts <- counts %>%
-  select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
 ```
 
 Replicate columns
@@ -91,12 +91,12 @@ counts_new <- counts_new[,-1]
 Read in metadata 
 ```{r}
 meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
-  select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
-  filter(Metric == "Molecular")
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  dplyr::filter(Metric == "Molecular")
 
 # Filter for sequenced samples
 meta_filt <- meta %>%
-  filter(TubeID %in% colnames(counts_new))
+  dplyr::filter(TubeID %in% colnames(counts_new))
 ```
 
 Reorder columns in filtered counts matrix so that it matches the metadata
@@ -185,7 +185,12 @@ DEG_results_vst <- varianceStabilizingTransformation(DEG_results_vst)
 
 Generate a PCA     
 ```{r}
-pcaData_DEG <- plotPCA(DEG_results_vst, intgroup = c("hpf"), returnData = TRUE)
+# Subset by the samples that are currently working (ie no trimming issues)
+sample_names_to_keep <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
+DEG_results_vst_subset <- DEG_results_vst[, sample_names_to_keep]
+
+# make pca plot 
+pcaData_DEG <- plotPCA(DEG_results_vst_subset, intgroup = c("hpf"), returnData = TRUE)
 
 percentVar_DEG <- round(100 * attr(pcaData_DEG, "percentVar"))
 ggplot(pcaData_DEG, aes(PC1, PC2, color = hpf, label = name)) + 
