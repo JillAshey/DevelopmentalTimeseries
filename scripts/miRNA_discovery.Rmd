@@ -7,14 +7,16 @@ output: html_document
 
 I ran mirdeep2 on R1 reads from DT Mcap 2023 experiment. The output was files with novel and known miRNAs. In this code, I filter the results to identify putative miRNAs!
 
-NOTE: these miRNAs are from semi-raw reads - I still need to trim adapters from certain reads. 
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(rvest)
 ```
+
+## Semi raw reads 
+NOTE: these miRNAs are from semi-raw reads - I still need to trim adapters from certain reads. 
+
 Load novel miRNAs 
 ```{r}
 novel <- read.csv("../data/Molecular/smRNA/mirdeep2/all_novel.csv", header = T)
@@ -34,7 +36,6 @@ novel_filt <- novel %>%
   #na.omit()
 length(unique(novel_filt$provisional.id))
 length(unique(novel_filt$consensus.mature.sequence))
-yay <- list(novel_filt$provisional.id)
 
 # Save csv 
 #write.csv(novel_filt, "../data/Molecular/smRNA/mirdeep2/novel_filt.csv")
@@ -63,5 +64,100 @@ length(unique(known_filt$consensus.mature.sequence))
 #write.csv(known_filt, "../data/Molecular/smRNA/mirdeep2/known_filt.csv")
 ```
 
+## Reads trimmed to 75bp with flexbar 
 
+Load novel miRNAs 
+```{r}
+novel_75 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_novel.csv", header = T)
 
+length(unique(novel_75$provisional.id)) # 610 unique genomic ids
+length(unique(novel_75$consensus.mature.sequence)) # 507 unique miRNA sequences
+```
+
+Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
+```{r}
+novel_75_filt <- novel_75 %>%
+  filter(miRDeep2.score > 10) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(novel_75_filt$provisional.id))
+length(unique(novel_75_filt$consensus.mature.sequence))
+
+# Save csv 
+#write.csv(novel_75_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_novel_filt.csv")
+```
+
+Load the known miRNAs
+```{r}
+known_75 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_known.csv", header = T)
+length(unique(known_75$tag.id)) # 11 unique genomic ids
+length(unique(known_75$consensus.mature.sequence)) # 11 unique miRNA sequences
+```
+
+Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
+```{r}
+known_75_filt <- known_75 %>%
+  filter(miRDeep2.score > 0) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(known_75_filt$tag.id))
+length(unique(known_75_filt$consensus.mature.sequence))
+
+# Save csv 
+#write.csv(known_75_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_known_filt.csv")
+```
+
+## Reads trimmed to 35bp with flexbar 
+
+Load novel miRNAs 
+```{r}
+novel_35 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_novel.csv", header = T)
+
+length(unique(novel_35$provisional.id)) # 592 unique genomic ids
+length(unique(novel_35$consensus.mature.sequence)) # 497 unique miRNA sequences
+```
+
+Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
+```{r}
+novel_35_filt <- novel_35 %>%
+  filter(miRDeep2.score > 10) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(novel_35_filt$provisional.id))
+length(unique(novel_35_filt$consensus.mature.sequence))
+
+# Save csv 
+write.csv(novel_35_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_novel_filt.csv")
+```
+
+Load the known miRNAs
+```{r}
+known_35 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_known.csv", header = T)
+length(unique(known_35$tag.id)) # 10 unique genomic ids
+length(unique(known_35$consensus.mature.sequence)) # 10 unique miRNA sequences
+```
+
+Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
+```{r}
+known_35_filt <- known_35 %>%
+  filter(miRDeep2.score > 0) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(known_35_filt$tag.id))
+length(unique(known_35_filt$consensus.mature.sequence))
+
+# Save csv 
+write.csv(known_35_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_known_filt.csv")
+```
