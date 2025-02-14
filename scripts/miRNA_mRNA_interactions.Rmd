@@ -13,20 +13,19 @@ library(igraph)
 library(ggraph)
 ```
 
-Workflow 
-- read in counts and average across a timepoint - mRNA and miRNA
-- read in miranda info 
+### WGCNA 
 
 Read in mRNA count data
 ```{r}
 mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+colnames(mrna_counts)[1] <- "gene"
 
 # Select specific columns 
-mrna_counts <- mrna_counts %>%
-  select(X, M9, M13, M23, M35, M52, M60, M72, M85)
+#mrna_counts <- mrna_counts %>%
+#  select(X, M9, M13, M23, M35, M52, M60, M72, M85)
 
 # Rename cols based on hpf 
-colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+#colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
 ```
 
 Read in miRNA count data 
@@ -36,117 +35,11 @@ mirna_counts <- as.data.frame(mirna_counts)
 
 # Select specific columns 
 mirna_counts <- mirna_counts %>%
-  select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
 
 # Rename cols based on hpf 
-colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+#colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
 ```
-
-Read in miranda data 
-```{r}
-miranda <- read.delim("../output/Molecular/smRNA/mirdeep2/miranda_strict_all_1kb_parsed_mcap.txt", header = F)
-colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "subject_start_end", "total_bp_shared", "query_similar", "subject_similar")
-
-# Format miranda df 
-miranda$miRNA <- sub("^>", "", miranda$miRNA)  # Remove leading ">"
-miranda$mRNA <- sub("ID=", "", miranda$mRNA)
-miranda$mRNA <- sub("::.*", "", miranda$mRNA)
-
-# Count how many mRNAs each miRNA interacts with 
-interact_summary <- miranda %>%
-  group_by(miRNA) %>%
-  summarize(mRNA_count = n_distinct(mRNA))
-```
-
-Identify interactions - only doing a subset because computationally intense
-```{r}
-specific_mirna <- "Montipora_capitata_HIv3___Scaffold_14_992284"
-specific_mrna <- "Montipora_capitata_HIv3___RNAseq.g23994.t1"
-
-interactions <- miranda %>%
-  filter(miRNA == specific_mirna) %>%
-  filter(mRNA == specific_mrna) %>%
-  select(miRNA, mRNA) %>%
-  dplyr::slice(100:120)  # Adjust this number as needed
-```
-
-Extract this info from counts dfs
-```{r}
-mirna_data <- mirna_counts %>%
-  filter(mirna %in% interactions$miRNA) %>%
-  pivot_longer(cols = -mirna, names_to = "hpf", values_to = "count") %>%
-  mutate(type = "miRNA") %>%
-  distinct(mirna, hpf, .keep_all = TRUE)  # Remove any duplicates
-
-mrna_data <- mrna_counts %>%
-  filter(gene %in% interactions$mRNA) %>%
-  pivot_longer(cols = -gene, names_to = "hpf", values_to = "count") %>%
-  mutate(type = "mRNA") %>%
-  distinct(gene, hpf, .keep_all = TRUE)  # Remove any duplicates
-```
-
-Combine and reshape data
-```{r}
-plot_data <- bind_rows(
-  mirna_data %>% dplyr::rename(id = mirna),
-  mrna_data %>% dplyr::rename(id = gene)
-) %>%
-  mutate(hpf = as.numeric(str_remove(hpf, "_hpf")))
-```
-
-Plot 
-```{r}
-plot_pair <- function(mirna, mrna) {
-  pair_data <- plot_data %>%
-    filter(id %in% c(mirna, mrna))
-  
-  # ggplot(pair_data, aes(x = hpf, y = count, color = type, group = id)) +
-  #   geom_line() +
-  #   geom_point() +
-  #   scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
-  #   scale_y_log10() +
-  #   theme_minimal() +
-  #   theme(plot.title = element_text(size = 5)) +
-  #   labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
-  #        title = paste("miRNA-mRNA Interaction:", mirna, "-", mrna),
-  #        color = "Type") +
-  #   theme(legend.position = "bottom")
-  
-  ggplot(plot_data, aes(x = hpf, y = count, group = id)) +
-  geom_line(aes(color = ifelse(type == "miRNA", "miRNA", id)), size = 1) +
-  geom_point(aes(color = ifelse(type == "miRNA", "miRNA", id))) +
-  scale_x_continuous(breaks = c(1, 4, 9, 14, 22, 28, 48, 72)) +
-  scale_y_log10() +
-  scale_color_manual(values = c("miRNA" = "black", 
-                                setNames(rainbow(n = length(unique(interactions$mRNA))), 
-                                         unique(interactions$mRNA)))) +
-  theme_minimal() +
-  labs(x = "Hours Post Fertilization", y = "Count (log scale)", 
-       title = paste("miRNA-mRNA Interactions for", specific_mirna),
-       color = "Gene") +
-  theme(
-    plot.title = element_text(size = 14),
-    legend.position = "right",
-    legend.text = element_text(size = 8)
-  )
-}
-
-# Generate and display plots for each pair
-for (i in 1:nrow(interactions)) {
-  mirna <- interactions$miRNA[i]
-  mrna <- interactions$mRNA[i]
-  print(plot_pair(mirna, mrna))
-}
-
-ggsave("../output/Molecular/miRNA_mRNA_interactions/specific_miRNA_targets.pdf", plot = last_plot(), height = 10, width = 25)
-```
-
-
-
-
-
-
-### WGCNA 
 
 I ran a WGCNA on the mRNA data and now I want to look at those results in conjunction with the miranda target results. 
 
@@ -164,11 +57,6 @@ colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "s
 miranda$miRNA <- sub("^>", "", miranda$miRNA)  # Remove leading ">"
 miranda$mRNA <- sub("ID=", "", miranda$mRNA)
 miranda$mRNA <- sub("::.*", "", miranda$mRNA)
-
-# Count how many mRNAs each miRNA interacts with 
-interact_summary <- miranda %>%
-  group_by(miRNA) %>%
-  summarize(mRNA_count = n_distinct(mRNA))
 ```
 
 Join dfs
@@ -210,16 +98,16 @@ zga2 <- blah %>%
 Extract maternal count info from counts dfs
 ```{r}
 mirna_data_maternal <- mirna_counts %>%
-  filter(mirna %in% maternal$miRNA) %>%
-  pivot_longer(cols = -mirna, names_to = "hpf", values_to = "count") %>%
-  mutate(type = "miRNA") %>%
-  distinct(mirna, hpf, .keep_all = TRUE)  # Remove any duplicates
+  dplyr::filter(X.miRNA %in% maternal$miRNA)%>%
+  pivot_longer(cols = -X.miRNA, names_to = "samples", values_to = "count") %>%
+  dplyr::mutate(type = "miRNA") %>%
+  dplyr::distinct(X.miRNA, samples, .keep_all = TRUE)  # Remove any duplicates
 
 mrna_data_maternal <- mrna_counts %>%
   filter(gene %in% maternal$mRNA) %>%
-  pivot_longer(cols = -gene, names_to = "hpf", values_to = "count") %>%
+  pivot_longer(cols = -gene, names_to = "samples", values_to = "count") %>%
   mutate(type = "mRNA") %>%
-  distinct(gene, hpf, .keep_all = TRUE)  # Remove any duplicates
+  distinct(gene, samples, .keep_all = TRUE)  # Remove any duplicates
 ```
 
 ```{r}
