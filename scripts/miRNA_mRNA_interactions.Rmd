@@ -13,25 +13,22 @@ library(igraph)
 library(ggraph)
 ```
 
-### WGCNA 
+### PCC 
 
 Read in mRNA count data
 ```{r}
 mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
-colnames(mrna_counts)[1] <- "gene"
 
-# Select specific columns 
-#mrna_counts <- mrna_counts %>%
-#  select(X, M9, M13, M23, M35, M52, M60, M72, M85)
-
-# Rename cols based on hpf 
-#colnames(mrna_counts) <- c("gene", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+# Set row names
+rownames(mrna_counts) <- mrna_counts[,1] #set first column that contains gene names as rownames
+mrna_counts <- mrna_counts[,-1] # remove column w/ gene names 
 ```
 
 Read in miRNA count data 
 ```{r}
 mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
 mirna_counts <- as.data.frame(mirna_counts)
+mirna_counts <- unique(mirna_counts)
 
 # Select specific columns 
 mirna_counts <- mirna_counts %>%
@@ -39,7 +36,19 @@ mirna_counts <- mirna_counts %>%
 
 # Rename cols based on hpf 
 #colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+
+# Set row names
+rownames(mirna_counts) <- mirna_counts[,1] #set first column that contains gene names as rownames
+mirna_counts <- mirna_counts[,-1] # remove column w/ gene names 
 ```
+
+
+
+
+
+
+
+### WGCNA 
 
 I ran a WGCNA on the mRNA data and now I want to look at those results in conjunction with the miranda target results. 
 
@@ -83,17 +92,42 @@ blah <- blah %>%
 # Make separate dfs for each category
 maternal <- blah %>%
   dplyr::filter(category == "Maternal")
+write.csv(maternal, "../output/Molecular/miRNA_mRNA_interactions/maternal_group_module_gene_trait_correlations_miranda.csv")
+
 mzt1 <- blah %>%
   dplyr::filter(category == "Wave 1 MZT")
+write.csv(mzt1, "../output/Molecular/miRNA_mRNA_interactions/mzt1_group_module_gene_trait_correlations_miranda.csv")
+
 mzt2 <- blah %>%
   dplyr::filter(category == "Wave 2 MZT")
+write.csv(mzt2, "../output/Molecular/miRNA_mRNA_interactions/mzt2_group_module_gene_trait_correlations_miranda.csv")
+
 zga1 <- blah %>%
   dplyr::filter(category == "ZGA1")
+write.csv(zga1, "../output/Molecular/miRNA_mRNA_interactions/zga1_group_module_gene_trait_correlations_miranda.csv")
+
 zga2 <- blah %>%
   dplyr::filter(category == "ZGA2")
+write.csv(zga2, "../output/Molecular/miRNA_mRNA_interactions/zga2_group_module_gene_trait_correlations_miranda.csv")
 ```
 
+
+
+
+
+
+
+
+
 #### Maternal 
+
+TO DO
+
+- Figure out how to deal with the count matrices if miRNA has n=1 and mRNA has n=4
+- Perform correlation - I will need to do something like average the mRNA counts and generate std error 
+- Extract mRNA and miRNAs of interest 
+- Make network plot 
+- Make expression over time plots
 
 Extract maternal count info from counts dfs
 ```{r}
