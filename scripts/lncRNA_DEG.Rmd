@@ -79,7 +79,7 @@ nrow(counts) #Before
 nrow(counts_filt) #After
 
 # Save filtered counts matrix 
-write.csv(counts_filt, file = "../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")
+#write.csv(counts_filt, file = "../output/Molecular/lncRNA/lncRNA_filtered_counts.csv")
 ```
 
 Before filtering, there were 31326 lncRNAs; after filtering, there were 20608 lncRNAs.  
@@ -87,7 +87,7 @@ Before filtering, there were 31326 lncRNAs; after filtering, there were 20608 ln
 Read in metadata 
 ```{r}
 meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
-  select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
   filter(Metric == "Molecular")
 
 # Filter for sequenced samples
@@ -146,6 +146,33 @@ ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) +
 
 PCA separates beautifully!! There are a couple of outliers -- M14 from 4hpf and M61 from 28 hpf. Will need to remove these before proceeding. 
 
+Generate a publication style PCA - still have not removed outliers as of 2/14/25.  
+```{r}
+pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  #geom_point(size = 3) + 
+  #geom_jitter(size = 4, width = 1.5, height = 1.5, stroke = 1) +
+  geom_jitter(aes(fill = hpf), size = 5, width = 1.5, height = 1.5, shape = 21, color = "black", stroke = 0.5) +
+  #geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  scale_color_discrete() +
+  coord_fixed() +
+  theme_linedraw() +
+  theme(legend.text = element_text(size = 13),
+        plot.background = element_blank(),
+        legend.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 15, face = "bold"),
+        #axis.title.y = element_text(vjust = -1.5),
+        plot.title = element_text(size = 20, face = "italic", hjust = 0.5))
+
+# Save 
+ggsave("../output/Molecular/lncRNA/PCA_all_lncRNAs.pdf", plot = last_plot())
+ggsave("../output/Molecular/lncRNA/PCA_all_lncRNAs.png", plot = last_plot())
+```
 
 
 

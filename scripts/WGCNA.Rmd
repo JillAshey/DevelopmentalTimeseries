@@ -136,10 +136,10 @@ dim(datExpr) #  46 9012
 powers = c(c(1:10), seq(from = 12, to=20, by=2))
 # Call the network topology analysis function
 
-#the below takes a long time to run, so is commented out and the pre-run results are loaded in below
+#the below takes a long time to run, so is commented out and the pre-run results are loaded in below. I need to save it to my desktop because it is too large to push to github. Instead, it will go on OSF
 #sft <- pickSoftThreshold(datExpr, powerVector = powers, verbose = 5) #...wait for this to finish
-#save(sft, file = "../output/WGCNA/sft.RData")
-load("../output/WGCNA/sft.RData")
+#save(sft, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/sft.RData")
+load("~/Desktop/PutnamLab/DevelopmentalTimeseries/sft.RData")
 
 # pickSoftThreshold 
 #  performs the analysis of network topology and aids the
@@ -149,7 +149,7 @@ load("../output/WGCNA/sft.RData")
 
 sizeGrWindow(9, 5) # set window size 
 # png to output 
-png("../output/WGCNA/sft.png", 1000, 1000, pointsize=20)
+png("../output/Molecular/mRNA/WGCNA/sft.png", 1000, 1000, pointsize=20)
 par(mfrow = c(1,2));
 cex1 = 0.9;
 # # Scale-free topology fit index as a function of the soft-thresholding power

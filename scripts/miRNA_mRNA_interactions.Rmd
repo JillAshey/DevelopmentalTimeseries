@@ -34,6 +34,8 @@ mirna_counts <- unique(mirna_counts)
 mirna_counts <- mirna_counts %>%
   dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
 
+mirna_counts <- unique(mirna_counts)
+
 # Rename cols based on hpf 
 #colnames(mirna_counts) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
 
