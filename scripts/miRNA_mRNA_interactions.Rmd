@@ -26,13 +26,13 @@ mrna_counts <- mrna_counts[,-1] # remove column w/ gene names
 
 Read in miRNA count data 
 ```{r}
-mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+mirna_counts <- read.delim("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/miRNAs_expressed_all_samples_1740330261.csv", header = T)
 mirna_counts <- as.data.frame(mirna_counts)
 mirna_counts <- unique(mirna_counts)
 
 # Select specific columns 
-mirna_counts <- mirna_counts %>%
-  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
+#mirna_counts <- mirna_counts %>%
+#  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
 
 mirna_counts <- unique(mirna_counts)
 
@@ -44,6 +44,7 @@ rownames(mirna_counts) <- mirna_counts[,1] #set first column that contains gene 
 mirna_counts <- mirna_counts[,-1] # remove column w/ gene names 
 ```
 
+I need to collapse the reads that have multiple lines...
 
 
 
@@ -56,12 +57,12 @@ I ran a WGCNA on the mRNA data and now I want to look at those results in conjun
 
 Read in WGCNA results 
 ```{r}
-gene_corr <- read.csv("../output/WGCNA/module_gene_trait_correlations.csv")
+gene_corr <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 ```
 
 Read in miranda data 
 ```{r}
-miranda <- read.delim("../output/Molecular/smRNA/mirdeep2/miranda_strict_all_1kb_parsed_mcap.txt", header = F)
+miranda <- read.delim("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/miranda_strict_all_1kb_mcap_trim_stringent_first_batch_parsed.txt", header = F)
 colnames(miranda) <- c("miRNA", "mRNA", "score", "energy", "query_start_end", "subject_start_end", "total_bp_shared", "query_similar", "subject_similar")
 
 # Format miranda df 
@@ -90,6 +91,7 @@ blah <- blah %>%
     moduleColor %in% c("pink", "magenta") ~ "ZGA2",
     TRUE ~ "Other"  # This catches any moduleColors not specified above
   ))
+write.csv(blah, "../output/Molecular/miRNA_mRNA_interactions/group_module_gene_trait_correlations_miranda.csv")
 
 # Make separate dfs for each category
 maternal <- blah %>%

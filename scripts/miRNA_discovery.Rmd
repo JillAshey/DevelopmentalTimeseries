@@ -161,3 +161,53 @@ length(unique(known_35_filt$consensus.mature.sequence))
 # Save csv 
 write.csv(known_35_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_known_filt.csv")
 ```
+
+## Trim stringent (cutadapt) first batch novel and known miRNAs 
+
+Load novel miRNAs 
+```{r}
+novel <- read.csv("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel.csv", header = T)
+
+length(unique(novel$provisional.id)) # 659 unique genomic ids
+length(unique(novel$consensus.mature.sequence)) # 554 unique miRNA sequences
+```
+
+Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
+```{r}
+novel_filt <- novel %>%
+  filter(miRDeep2.score > 10) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(novel_filt$provisional.id))
+length(unique(novel_filt$consensus.mature.sequence))
+
+# Save csv 
+write.csv(novel_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel_filt.csv")
+```
+
+Load the known miRNAs
+```{r}
+known <- read.csv("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_known.csv", header = T)
+length(unique(known$tag.id)) # 15 unique genomic ids
+length(unique(known$consensus.mature.sequence)) # 15 unique miRNA sequences
+```
+
+Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
+```{r}
+known_filt <- known %>%
+  filter(miRDeep2.score > 0) %>%
+  filter(rfam.alert == "-") %>%
+  filter(mature.read.count > 10) %>%
+  #filter(star.read.count >10) %>%
+  filter(significant.randfold.p.value == "yes") #%>%
+  #na.omit()
+length(unique(known_filt$tag.id))
+length(unique(known_filt$consensus.mature.sequence))
+
+# Save csv 
+write.csv(known_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_known_filt.csv")
+```
+

@@ -533,30 +533,31 @@ MEsPlotting <- MEs_table %>%
 # Average modules to form the following groups: Maternal, MZT1, MZT2, ZGA1, ZGA2
 ## Group 1: Maternal
 maternal <- MEsPlotting %>%
-  dplyr::select(MEmidnightblue, MEbrown, MEgreen, MEpurple) %>%
+  dplyr::select(MEmidnightblue, MEbrown, MEgreen) %>%
   dplyr::rowwise() %>%
   dplyr::mutate(Maternal_avg = mean(c_across(everything())))
 
 ## Group 2: Wave 1 MZT
 wave1_mzt <- MEsPlotting %>%
-  dplyr::select(MEroyalblue, MElightyellow, MEmagenta) %>%
+  dplyr::select(MElightcyan, MElightyellow, MEmagenta) %>%
   dplyr::rowwise() %>%
   dplyr::mutate(Wave1_MZT_avg = mean(c_across(everything())))
 
 ## Group 3: Wave 2 MZT
 wave2_mzt <- MEsPlotting %>%
-  dplyr::select(MEblue, MEcyan, MEpink) %>%
+  dplyr::select(MEpurple, MEgrey60, MEroyalblue, MElightgreen) %>%
   dplyr::rowwise() %>%
   dplyr::mutate(Wave2_MZT_avg = mean(c_across(everything())))
 
 ## Group 4: ZGA1
 zga1 <- MEsPlotting %>%
-  dplyr::select(MEred, MElightcyan) %>%
+  dplyr::select(MEblack, MEblue, MEpink) %>%
+  dplyr::rowwise() %>%
   dplyr::mutate(ZGA1_avg = mean(c_across(everything())))
 
 ## Group 5: ZGA2
 zga2 <- MEsPlotting %>%
-  dplyr::select(MElightgreen, MEgrey60, MEsalmon, MEblack) %>%
+  dplyr::select(MEred, MEcyan, MEsalmon) %>%
   dplyr::rowwise() %>%
   dplyr::mutate(ZGA2_avg = mean(c_across(everything())))
 
