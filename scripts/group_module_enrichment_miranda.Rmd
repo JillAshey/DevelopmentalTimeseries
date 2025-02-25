@@ -12,6 +12,8 @@ library(tidyverse)
 library(topGO)
 ```
 
+# Miranda, no correlation data enrichment of miRNA targets
+
 Read in modules from WGCNA combined with miranda data 
 ```{r}
 all_info <- read.csv("../output/Molecular/miRNA_mRNA_interactions/group_module_gene_trait_correlations_miranda.csv")
@@ -1161,6 +1163,9 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda/GO_en_sig_zga2_modules_miranda.png", last_plot(), width = 30, height = 40)
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda/GO_en_sig_zga2_modules_miranda.pdf", last_plot(), width = 30, height = 40)
 ```
+
+
+
 
 
 
