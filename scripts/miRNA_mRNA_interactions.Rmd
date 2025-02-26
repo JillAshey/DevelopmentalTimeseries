@@ -27,6 +27,19 @@ mrna_counts <- mrna_counts[,-1] # remove column w/ gene names
 mrna_counts <- as.num
 ```
 
+Normalize with RPM
+```{r}
+# # Function to normalize counts (simple RPM normalization)
+# normalize_counts <- function(counts) {
+#   rpm <- t(t(counts) / colSums(counts)) * 1e6
+#   return(rpm)
+# }
+# 
+# # Normalize counts
+# mRNA_norm <- normalize_counts(mrna_counts)
+#mRNA_norm <- as.matrix(mRNA_counts_filt)
+```
+
 SHOULD I BE NORMALIZING????
 
 Apply vst normalization
@@ -209,7 +222,7 @@ length(unique(combined_data_pcc$miRNA))
 length(unique(combined_data_pcc$mRNA))
 
 # Save as csv
-write.csv(combined_data_pcc, "../output/Molecular/miRNA_mRNA_interactions/Peve-miranda_PCC_miRNA_mRNA.csv")
+write.csv(combined_data_pcc, "../output/Molecular/miRNA_mRNA_interactions/miranda_PCC_miRNA_mRNA.csv")
 ```
 
 Summarize the data
@@ -269,7 +282,7 @@ pairs_of_interest_pcc <- combined_data_pcc %>%
 cat("PCC correlation > |0.5| and a p-value < 0.05:", nrow(pairs_of_interest_pcc), "\n")
 
 # Save pairs of interest df as csv 
-#write.csv(pairs_of_interest_pcc, "../output/Molecular/miRNA_mRNA_interactions/miranda_PCC_sig_miRNA_mRNA.csv")
+write.csv(pairs_of_interest_pcc, "../output/Molecular/miRNA_mRNA_interactions/miranda_PCC_sig_miRNA_mRNA.csv")
 ```
 
 Summarize significant pairs
@@ -439,17 +452,17 @@ merged_data_z <- merged_data %>%
 write.csv(merged_data_z, "../output/Molecular/miRNA_mRNA_interactions/maternal_gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
 ```
 
-Shape data for plotting
+Shape data for plotting (zscore)
 ```{r}
 plot_data <- merged_data_z %>%
-  select(miRNA, mRNA, timepoint, mirna_zscore, mrna_mean_zscore, mrna_se_zscore) %>%
+  dplyr::select(miRNA, mRNA, timepoint, mirna_zscore, mrna_mean_zscore, mrna_se_zscore) %>%
   pivot_longer(cols = c(mirna_zscore, mrna_mean_zscore), names_to = "RNA_type", values_to = "count") %>%
   group_by(miRNA, mRNA, RNA_type) %>%
   ungroup() %>%
   mutate(se = ifelse(RNA_type == "mirna_zscore", NA, mrna_se_zscore)) # put NA for se for miRNAs
 ```
 
-Plot
+Plot (zscoare)
 ```{r}
 # Ensure the timepoint column is a factor with the correct order
 plot_data$timepoint <- factor(plot_data$timepoint, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
@@ -502,9 +515,67 @@ for (plot in plot_list) {
   print(plot)
 }
 dev.off()
+```
 
-# Save all plots to a PNG
-png("../output/Molecular/miRNA_mRNA_interactions/maternal_miRNA_mRNA_sig_interactions_WGCNA_zscores.png", width = 12, height = 8)
+Shape data for plotting (counts)
+```{r}
+plot_data <- merged_data_z %>%
+  dplyr::select(miRNA, mRNA, timepoint, count, mean, se) %>%
+  pivot_longer(cols = c(count, mean), names_to = "RNA_type", values_to = "count") %>%
+  group_by(miRNA, mRNA, RNA_type) %>%
+  ungroup() %>%
+  mutate(se = ifelse(RNA_type == "count", NA, .data$se))
+```
+
+Plot (zscoare)
+```{r}
+# Ensure the timepoint column is a factor with the correct order
+plot_data$timepoint <- factor(plot_data$timepoint, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
+
+# Function to create a single plot for each miRNA and its associated mRNAs
+create_mirna_mrna_plot <- function(data, mirna) {
+  ggplot(data, aes(x = timepoint, y = count, color = RNA_type, group = interaction(RNA_type, mRNA))) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    geom_errorbar(data = subset(data, RNA_type == "mean"),
+                  aes(ymin = count - se, ymax = count + se),
+                  width = 0.2) +
+    scale_color_manual(values = c("count" = "purple", "mean" = "orange")) +
+    labs(title = paste("miRNA:", mirna),
+         x = "Hours post fertilization",
+         y = "Z-score",
+         color = "RNA type") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.title = element_text(face = "bold", size = 12),
+      legend.text = element_text(size = 10),
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1)
+    )
+}
+
+# Group the data by miRNA
+miRNA_groups <- plot_data %>%
+  group_by(miRNA) %>%
+  group_split()
+
+# Create a list to store all plots
+plot_list <- list()
+
+# Loop through each miRNA group and create a plot
+for(i in seq_along(miRNA_groups)) {
+  current_group <- miRNA_groups[[i]]
+  current_miRNA <- unique(current_group$miRNA)
+  plot_list[[i]] <- create_mirna_mrna_plot(current_group, current_miRNA)
+}
+
+# Save all plots to a PDF
+pdf("../output/Molecular/miRNA_mRNA_interactions/maternal_miRNA_mRNA_sig_interactions_WGCNA_counts.pdf", width = 12, height = 8)
 for (plot in plot_list) {
   print(plot)
 }
@@ -594,14 +665,14 @@ Subset counts matrices for miRNAs and genes in mzt1
 # Extract miRNA identifiers from the mzt1 dataset
 mzt1_miRNAs <- mzt1$miRNA
 
-# Filter mirna_counts_df to keep only rows where the row names are in maternal_miRNAs
+# Filter mirna_counts_df to keep only rows where the row names are in mzt1_miRNAs
 filtered_mirna_counts <- mirna_counts_df[rownames(mirna_counts_df) %in% mzt1_miRNAs, ]
 
 ## mRNA
-# Extract mRNA identifiers from the maternal dataset
+# Extract mRNA identifiers from the mzt1 dataset
 mzt1_mRNAs <- mzt1$mRNA
 
-# Filter df to keep only rows where the row names are in maternal_miRNAs
+# Filter df to keep only rows where the row names are in mzt1_miRNAs
 filtered_mrna_counts <- vst_mean_sd_se_df[vst_mean_sd_se_df$Gene %in% mzt1_mRNAs, ]
 ```
 
@@ -703,10 +774,10 @@ for (plot in plot_list) {
 dev.off()
 ```
 
-Make a network plot for genes in maternal category targeted by miRNAs
+Make a network plot for genes in mzt1 category targeted by miRNAs
 ```{r}
 # Create the graph
-g <- graph_from_data_frame(maternal, directed = FALSE)
+g <- graph_from_data_frame(mzt1, directed = FALSE)
 
 # Add edge attributes
 E(g)$weight <- abs(E(g)$PCC.cor)  # Use absolute PCC for edge weight
@@ -757,154 +828,175 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/mzt1_significant_miRNA_num_t
 ggsave("../output/Molecular/miRNA_mRNA_interactions/mzt1_significant_miRNA_num_targets.pdf", target_num, width = 12, height = 10, dpi = 300)
 ```
 
+## MZT2
 
-
-
-
-
-
-#### Maternal 
-
-TO DO
-
-- Figure out how to deal with the count matrices if miRNA has n=1 and mRNA has n=4
-- Perform correlation - I will need to do something like average the mRNA counts and generate std error 
-- Extract mRNA and miRNAs of interest 
-- Make network plot 
-- Make expression over time plots
-
-Extract maternal count info from counts dfs
+Subset mzt2
 ```{r}
-mirna_data_maternal <- mirna_counts %>%
-  dplyr::filter(X.miRNA %in% maternal$miRNA)%>%
-  pivot_longer(cols = -X.miRNA, names_to = "samples", values_to = "count") %>%
-  dplyr::mutate(type = "miRNA") %>%
-  dplyr::distinct(X.miRNA, samples, .keep_all = TRUE)  # Remove any duplicates
-
-mrna_data_maternal <- mrna_counts %>%
-  filter(gene %in% maternal$mRNA) %>%
-  pivot_longer(cols = -gene, names_to = "samples", values_to = "count") %>%
-  mutate(type = "mRNA") %>%
-  distinct(gene, samples, .keep_all = TRUE)  # Remove any duplicates
+mzt2 <- sig_combined_data_pcc_gene_corr_cats %>%
+  filter(category == "MZT2")
 ```
 
+Summarize mzt2 data
 ```{r}
-# Merge miRNA and mRNA data with interaction information
-merged_data <- maternal %>%
-  left_join(mirna_data_maternal, by = c("miRNA" = "mirna")) %>%
-  left_join(mrna_data_maternal, by = c("mRNA" = "gene", "hpf" = "hpf")) %>%
-  rename(miRNA_count = count.x, mRNA_count = count.y)
+summary_data <- mzt2 %>%
+  group_by(miRNA) %>%
+  summarise(
+    positive_count = sum(PCC.cor > 0),
+    negative_count = sum(PCC.cor < 0)
+  ) %>%
+  mutate(total_count = positive_count + negative_count) %>%
+  arrange(desc(total_count))
+sum(summary_data$positive_count)
+sum(summary_data$negative_count)
+```
 
-# Reshape the data for plotting and calculate Z-scores
-plot_data <- merged_data %>%
-  select(miRNA, mRNA, hpf, miRNA_count, mRNA_count) %>%
-  pivot_longer(cols = c(miRNA_count, mRNA_count), names_to = "RNA_type", values_to = "count") %>%
+Subset counts matrices for miRNAs and genes in mzt2
+```{r}
+## miRNA
+# Extract miRNA identifiers from the mzt1 dataset
+mzt2_miRNAs <- mzt2$miRNA
+
+# Filter mirna_counts_df to keep only rows where the row names are in mzt2_miRNAs
+filtered_mirna_counts <- mirna_counts_df[rownames(mirna_counts_df) %in% mzt2_miRNAs, ]
+
+## mRNA
+# Extract mRNA identifiers from the maternal dataset
+mzt2_mRNAs <- mzt2$mRNA
+
+# Filter df to keep only rows where the row names are in mzt2_miRNAs
+filtered_mrna_counts <- vst_mean_sd_se_df[vst_mean_sd_se_df$Gene %in% mzt2_mRNAs, ]
+```
+
+Pivot dfs to long 
+```{r}
+mirna_long <- filtered_mirna_counts %>%
+  rownames_to_column("miRNA") %>%
+  pivot_longer(cols = -miRNA,
+               names_to = "timepoint",
+               values_to = "count")
+
+mrna_long <- filtered_mrna_counts %>%
+  pivot_longer(cols = -Gene,
+               names_to = c("timepoint", ".value"),
+               names_pattern = "(.+)_(.+)")
+```
+
+Merge miRNA and mRNA data with interaction information
+```{r}
+merged_data <- mzt2 %>%
+  left_join(mirna_long, by = "miRNA") %>%
+  left_join(mrna_long, by = c("mRNA" = "Gene", "timepoint")) 
+```
+
+Calculate zscores
+```{r}
+merged_data_z <- merged_data %>%  
+  mutate(mirna_zscore = scale(count)) %>%
+  mutate(mrna_mean_zscore = scale(mean)) %>%
+  mutate(mrna_sd_zscore = scale(sd)) %>%
+  mutate(mrna_se_zscore = scale(se))
+
+# Save as csv 
+write.csv(merged_data_z, "../output/Molecular/miRNA_mRNA_interactions/mzt2_gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
+```
+
+Shape data for plotting
+```{r}
+plot_data <- merged_data_z %>%
+  dplyr::select(miRNA, mRNA, timepoint, mirna_zscore, mrna_mean_zscore, mrna_se_zscore) %>%
+  pivot_longer(cols = c(mirna_zscore, mrna_mean_zscore), names_to = "RNA_type", values_to = "count") %>%
   group_by(miRNA, mRNA, RNA_type) %>%
-  mutate(zscore = scale(count)) %>%
-  ungroup()
-
-# Convert hpf to a factor with a specific order
-plot_data$hpf <- factor(plot_data$hpf, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
-
-# Function to create a single plot
-create_plot <- function(data, mirna, mrna) {
-  ggplot(data, aes(x = hpf, y = zscore, color = RNA_type, group = RNA_type)) +
-    geom_line() +
-    geom_point() +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-    labs(title = paste("miRNA:", mirna, "\nmRNA:", mrna),
-         x = "Hours post fertilization",
-         y = "Z-score",
-         color = "RNA type")
-}
-
-# Create a list of plots
-plot_list <- plot_data %>%
-  group_by(miRNA, mRNA) %>%
-  group_map(~ create_plot(.x, .y$miRNA, .y$mRNA))
-
-# Save plots to a multi-page PDF
-pdf("../output/WGCNA/maternal_miRNA_mRNA_interactions_WGCNA_zscores.pdf", width = 10, height = 7)
-for (plot in plot_list) {
-  print(plot)
-}
-dev.off()
-
+  ungroup() %>%
+  mutate(se = ifelse(RNA_type == "mirna_zscore", NA, mrna_se_zscore)) # put NA for se for miRNAs
 ```
 
+Plot
 ```{r}
-# Merge miRNA and mRNA data with interaction information
-merged_data <- maternal %>%
-  left_join(mirna_data_maternal, by = c("miRNA" = "mirna")) %>%
-  left_join(mrna_data_maternal, by = c("mRNA" = "gene", "hpf" = "hpf")) %>%
-  rename(miRNA_count = count.x, mRNA_count = count.y)
+# Ensure the timepoint column is a factor with the correct order
+plot_data$timepoint <- factor(plot_data$timepoint, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
 
-# Function to calculate Z-scores
-calculate_zscores <- function(data) {
-  data %>%
-    group_by(type) %>%
-    mutate(zscore = scale(count)) %>%
-    ungroup()
-}
-
-# Function to create a single plot for a miRNA and its targets
-create_mirna_plot <- function(data, specific_mirna) {
-  mirna_data <- data %>%
-    filter(miRNA == specific_mirna) %>%
-    select(miRNA, hpf, miRNA_count) %>%
-    rename(count = miRNA_count) %>%
-    mutate(type = "miRNA")
-
-  mrna_data <- data %>%
-    filter(miRNA == specific_mirna) %>%
-    select(mRNA, hpf, mRNA_count) %>%
-    rename(count = mRNA_count) %>%
-    mutate(type = "mRNA")
-
-  combined_data <- bind_rows(mirna_data, mrna_data) %>%
-    mutate(hpf = factor(hpf, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))) %>%
-    calculate_zscores()
-
-  ggplot(combined_data, aes(x = hpf, y = zscore, color = type, group = interaction(type, mRNA))) +
+# Function to create a single plot for each miRNA and its associated mRNAs
+create_mirna_mrna_plot <- function(data, mirna) {
+  ggplot(data, aes(x = timepoint, y = count, color = RNA_type, group = interaction(RNA_type, mRNA))) +
     geom_line(size = 1) +
     geom_point(size = 3) +
-    scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange")) +
-    labs(title = paste("Z-scores of", specific_mirna, "and its target mRNAs"),
+    geom_errorbar(data = subset(data, RNA_type == "mrna_mean_zscore"),
+                  aes(ymin = count - se, ymax = count + se),
+                  width = 0.2) +
+    scale_color_manual(values = c("mirna_zscore" = "purple", "mrna_mean_zscore" = "orange")) +
+    labs(title = paste("miRNA:", mirna),
          x = "Hours post fertilization",
          y = "Z-score",
          color = "RNA type") +
     theme_minimal() +
-        theme(
+    theme(
       plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
-      plot.subtitle = element_text(size = 12, hjust = 0.5),
       axis.title = element_text(face = "bold", size = 12),
       axis.text = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1),
       legend.title = element_text(face = "bold", size = 12),
       legend.text = element_text(size = 10),
       legend.position = "right",
       panel.grid.minor = element_blank(),
       panel.border = element_rect(color = "black", fill = NA, size = 1)
     )
-  
 }
 
-# Create a list of plots
-unique_mirnas <- unique(merged_data$miRNA)
-plot_list <- map(unique_mirnas, ~create_mirna_plot(merged_data, .x))
+# Group the data by miRNA
+miRNA_groups <- plot_data %>%
+  group_by(miRNA) %>%
+  group_split()
 
-# Save plots to a multi-page PDF
-pdf("../output/WGCNA/maternal_miRNA_mRNA_interactions_WGCNA_zscores.pdf", width = 10, height = 7)
+# Create a list to store all plots
+plot_list <- list()
+
+# Loop through each miRNA group and create a plot
+for(i in seq_along(miRNA_groups)) {
+  current_group <- miRNA_groups[[i]]
+  current_miRNA <- unique(current_group$miRNA)
+  plot_list[[i]] <- create_mirna_mrna_plot(current_group, current_miRNA)
+}
+
+# Save all plots to a PDF
+pdf("../output/Molecular/miRNA_mRNA_interactions/mzt2_miRNA_mRNA_sig_interactions_WGCNA_zscores.pdf", width = 12, height = 8)
 for (plot in plot_list) {
   print(plot)
 }
 dev.off()
 ```
 
-Count number of targets for each miRNA in maternal module 
+Make a network plot for genes in mzt2 category targeted by miRNAs
+```{r}
+# Create the graph
+g <- graph_from_data_frame(maternal, directed = FALSE)
+
+# Add edge attributes
+E(g)$weight <- abs(E(g)$PCC.cor)  # Use absolute PCC for edge weight
+E(g)$color <- ifelse(E(g)$PCC.cor > 0, "red", "blue")  # Blue for positive, red for negative correlations
+
+# Add node attributes
+V(g)$type <- ifelse(V(g)$name %in% pairs_of_interest_pcc$miRNA, "miRNA", "mRNA")
+
+# Convert to tbl_graph for ggraph
+g_tbl <- as_tbl_graph(g)
+
+# Create plot
+p <- ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
+  geom_node_point(aes(color = type), size = 5) +
+  #geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  scale_edge_width(range = c(0.5, 3)) +
+  scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange", "Positive correlation" = "blue", "Negative correlation" = "red")) +
+  theme_graph() +
+  labs(title = "miRNA-mRNA Interaction Network",
+       subtitle = "Edge width represents |PCC|, color represents correlation direction");p
+ggsave("../output/Molecular/miRNA_mRNA_interactions/mzt2_significant_miRNA_mRNA_network.png", p, width = 12, height = 10, dpi = 300)
+```
+
+Count number of targets for each miRNA in mzt2 module 
 ```{r}
 # Count the number of target mRNAs for each miRNA
-result <- maternal %>%
+result <- mzt2 %>%
   group_by(miRNA) %>%
   summarise(num_queries = n_distinct(mRNA))
 
@@ -923,56 +1015,393 @@ target_num <- ggplot(result, aes(x = reorder(miRNA, -num_queries), y = num_queri
   labs(x = "miRNAs", y = "Number of Targets") +
   scale_y_continuous(expand = c(0, 0), limits = c(0, max(result$num_queries) * 1.1)); target_num
 
+ggsave("../output/Molecular/miRNA_mRNA_interactions/mzt2_significant_miRNA_num_targets.png", target_num, width = 12, height = 10, dpi = 300)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/mzt2_significant_miRNA_num_targets.pdf", target_num, width = 12, height = 10, dpi = 300)
 ```
 
-Make network plot for maternal module 
+## ZGA1
+
+Subset zga1
 ```{r}
-# Assuming 'maternal' dataframe contains the miRNA-mRNA interactions
-# If not, replace 'maternal' with the appropriate dataframe name
+zga1 <- sig_combined_data_pcc_gene_corr_cats %>%
+  filter(category == "ZGA1")
+```
 
-# Create edge list
-edges <- maternal %>%
-  select(miRNA, mRNA) %>%
-  rename(from = miRNA, to = mRNA)
+Summarize zga1 data
+```{r}
+summary_data <- zga1 %>%
+  group_by(miRNA) %>%
+  summarise(
+    positive_count = sum(PCC.cor > 0),
+    negative_count = sum(PCC.cor < 0)
+  ) %>%
+  mutate(total_count = positive_count + negative_count) %>%
+  arrange(desc(total_count))
+sum(summary_data$positive_count)
+sum(summary_data$negative_count)
+```
 
-# Create graph object
-g <- graph_from_data_frame(edges, directed = FALSE)
+Subset counts matrices for miRNAs and genes in zga1
+```{r}
+## miRNA
+# Extract miRNA identifiers from the zga1 dataset
+zga1_miRNAs <- zga1$miRNA
+
+# Filter mirna_counts_df to keep only rows where the row names are in zga1_miRNAs
+filtered_mirna_counts <- mirna_counts_df[rownames(mirna_counts_df) %in% zga1_miRNAs, ]
+
+## mRNA
+# Extract mRNA identifiers from the zga1 dataset
+zga1_mRNAs <- zga1$mRNA
+
+# Filter df to keep only rows where the row names are in zga1_miRNAs
+filtered_mrna_counts <- vst_mean_sd_se_df[vst_mean_sd_se_df$Gene %in% zga1_mRNAs, ]
+```
+
+Pivot dfs to long 
+```{r}
+mirna_long <- filtered_mirna_counts %>%
+  rownames_to_column("miRNA") %>%
+  pivot_longer(cols = -miRNA,
+               names_to = "timepoint",
+               values_to = "count")
+
+mrna_long <- filtered_mrna_counts %>%
+  pivot_longer(cols = -Gene,
+               names_to = c("timepoint", ".value"),
+               names_pattern = "(.+)_(.+)")
+```
+
+Merge miRNA and mRNA data with interaction information
+```{r}
+merged_data <- zga1 %>%
+  left_join(mirna_long, by = "miRNA") %>%
+  left_join(mrna_long, by = c("mRNA" = "Gene", "timepoint")) 
+```
+
+Calculate zscores
+```{r}
+merged_data_z <- merged_data %>%  
+  mutate(mirna_zscore = scale(count)) %>%
+  mutate(mrna_mean_zscore = scale(mean)) %>%
+  mutate(mrna_sd_zscore = scale(sd)) %>%
+  mutate(mrna_se_zscore = scale(se))
+
+# Save as csv 
+write.csv(merged_data_z, "../output/Molecular/miRNA_mRNA_interactions/zga1_gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
+```
+
+Shape data for plotting
+```{r}
+plot_data <- merged_data_z %>%
+  dplyr::select(miRNA, mRNA, timepoint, mirna_zscore, mrna_mean_zscore, mrna_se_zscore) %>%
+  pivot_longer(cols = c(mirna_zscore, mrna_mean_zscore), names_to = "RNA_type", values_to = "count") %>%
+  group_by(miRNA, mRNA, RNA_type) %>%
+  ungroup() %>%
+  mutate(se = ifelse(RNA_type == "mirna_zscore", NA, mrna_se_zscore)) # put NA for se for miRNAs
+```
+
+Plot
+```{r}
+# Ensure the timepoint column is a factor with the correct order
+plot_data$timepoint <- factor(plot_data$timepoint, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
+
+# Function to create a single plot for each miRNA and its associated mRNAs
+create_mirna_mrna_plot <- function(data, mirna) {
+  ggplot(data, aes(x = timepoint, y = count, color = RNA_type, group = interaction(RNA_type, mRNA))) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    geom_errorbar(data = subset(data, RNA_type == "mrna_mean_zscore"),
+                  aes(ymin = count - se, ymax = count + se),
+                  width = 0.2) +
+    scale_color_manual(values = c("mirna_zscore" = "purple", "mrna_mean_zscore" = "orange")) +
+    labs(title = paste("miRNA:", mirna),
+         x = "Hours post fertilization",
+         y = "Z-score",
+         color = "RNA type") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.title = element_text(face = "bold", size = 12),
+      legend.text = element_text(size = 10),
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1)
+    )
+}
+
+# Group the data by miRNA
+miRNA_groups <- plot_data %>%
+  group_by(miRNA) %>%
+  group_split()
+
+# Create a list to store all plots
+plot_list <- list()
+
+# Loop through each miRNA group and create a plot
+for(i in seq_along(miRNA_groups)) {
+  current_group <- miRNA_groups[[i]]
+  current_miRNA <- unique(current_group$miRNA)
+  plot_list[[i]] <- create_mirna_mrna_plot(current_group, current_miRNA)
+}
+
+# Save all plots to a PDF
+pdf("../output/Molecular/miRNA_mRNA_interactions/zga1_miRNA_mRNA_sig_interactions_WGCNA_zscores.pdf", width = 12, height = 8)
+for (plot in plot_list) {
+  print(plot)
+}
+dev.off()
+```
+
+Make a network plot for genes in zga1 category targeted by miRNAs
+```{r}
+# Create the graph
+g <- graph_from_data_frame(zga1, directed = FALSE)
+
+# Add edge attributes
+E(g)$weight <- abs(E(g)$PCC.cor)  # Use absolute PCC for edge weight
+E(g)$color <- ifelse(E(g)$PCC.cor > 0, "red", "blue")  # Blue for positive, red for negative correlations
 
 # Add node attributes
-V(g)$type <- ifelse(V(g)$name %in% edges$from, "miRNA", "mRNA")
+V(g)$type <- ifelse(V(g)$name %in% pairs_of_interest_pcc$miRNA, "miRNA", "mRNA")
 
 # Convert to tbl_graph for ggraph
 g_tbl <- as_tbl_graph(g)
 
 # Create plot
-network_plot <- ggraph(g_tbl, layout = "fr") +
-  geom_edge_link(aes(edge_alpha = 0.2), show.legend = FALSE) +
+p <- ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
   geom_node_point(aes(color = type), size = 5) +
   #geom_node_text(aes(label = name), repel = TRUE, size = 3) +
-  scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange"),
-                     name = "Node Type") +
+  scale_edge_width(range = c(0.5, 3)) +
+  scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange", "Positive correlation" = "blue", "Negative correlation" = "red")) +
   theme_graph() +
+  labs(title = "miRNA-mRNA Interaction Network",
+       subtitle = "Edge width represents |PCC|, color represents correlation direction");p
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga1_significant_miRNA_mRNA_network.png", p, width = 12, height = 10, dpi = 300)
+```
+
+Count number of targets for each miRNA in zga1 module 
+```{r}
+# Count the number of target mRNAs for each miRNA
+result <- zga1 %>%
+  group_by(miRNA) %>%
+  summarise(num_queries = n_distinct(mRNA))
+
+# Plot number of targets for each miRNA
+target_num <- ggplot(result, aes(x = reorder(miRNA, -num_queries), y = num_queries)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.8) +
+  theme_classic(base_size = 14) +
   theme(
-    legend.position = "right",
-    legend.title = element_text(size = 12, face = "bold"),
-    legend.text = element_text(size = 10),
-    plot.title = element_text(size = 16, face = "bold", hjust = 0.5)
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20, unit = "pt")
   ) +
-  labs(title = "miRNA-mRNA Interaction Network"); network_plot
+  labs(x = "miRNAs", y = "Number of Targets") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, max(result$num_queries) * 1.1)); target_num
 
-# Save the plot
-#ggsave("../output/WGCNA/maternal_miRNA_mRNA_network.pdf", plot = network_plot, width = 20, height = 15)
-ggsave("../output/WGCNA/maternal_miRNA_mRNA_network.png", plot = network_plot, width = 20, height = 15)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga1_significant_miRNA_num_targets.png", target_num, width = 12, height = 10, dpi = 300)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga1_significant_miRNA_num_targets.pdf", target_num, width = 12, height = 10, dpi = 300)
+```
 
+## ZGA2
+
+Subset zga2
+```{r}
+zga2 <- sig_combined_data_pcc_gene_corr_cats %>%
+  filter(category == "ZGA2")
+```
+
+Summarize zga2 data
+```{r}
+summary_data <- zga2 %>%
+  group_by(miRNA) %>%
+  summarise(
+    positive_count = sum(PCC.cor > 0),
+    negative_count = sum(PCC.cor < 0)
+  ) %>%
+  mutate(total_count = positive_count + negative_count) %>%
+  arrange(desc(total_count))
+sum(summary_data$positive_count)
+sum(summary_data$negative_count)
+```
+
+Subset counts matrices for miRNAs and genes in zga2
+```{r}
+## miRNA
+# Extract miRNA identifiers from the zga2 dataset
+zga2_miRNAs <- zga2$miRNA
+
+# Filter mirna_counts_df to keep only rows where the row names are in zga2_miRNAs
+filtered_mirna_counts <- mirna_counts_df[rownames(mirna_counts_df) %in% zga2_miRNAs, ]
+
+## mRNA
+# Extract mRNA identifiers from the zga1 dataset
+zga2_mRNAs <- zga2$mRNA
+
+# Filter df to keep only rows where the row names are in zga2_miRNAs
+filtered_mrna_counts <- vst_mean_sd_se_df[vst_mean_sd_se_df$Gene %in% zga2_mRNAs, ]
+```
+
+Pivot dfs to long 
+```{r}
+mirna_long <- filtered_mirna_counts %>%
+  rownames_to_column("miRNA") %>%
+  pivot_longer(cols = -miRNA,
+               names_to = "timepoint",
+               values_to = "count")
+
+mrna_long <- filtered_mrna_counts %>%
+  pivot_longer(cols = -Gene,
+               names_to = c("timepoint", ".value"),
+               names_pattern = "(.+)_(.+)")
+```
+
+Merge miRNA and mRNA data with interaction information
+```{r}
+merged_data <- zga2 %>%
+  left_join(mirna_long, by = "miRNA") %>%
+  left_join(mrna_long, by = c("mRNA" = "Gene", "timepoint")) 
+```
+
+Calculate zscores
+```{r}
+merged_data_z <- merged_data %>%  
+  mutate(mirna_zscore = scale(count)) %>%
+  mutate(mrna_mean_zscore = scale(mean)) %>%
+  mutate(mrna_sd_zscore = scale(sd)) %>%
+  mutate(mrna_se_zscore = scale(se))
+
+# Save as csv 
+write.csv(merged_data_z, "../output/Molecular/miRNA_mRNA_interactions/zga2_gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
+```
+
+Shape data for plotting
+```{r}
+plot_data <- merged_data_z %>%
+  dplyr::select(miRNA, mRNA, timepoint, mirna_zscore, mrna_mean_zscore, mrna_se_zscore) %>%
+  pivot_longer(cols = c(mirna_zscore, mrna_mean_zscore), names_to = "RNA_type", values_to = "count") %>%
+  group_by(miRNA, mRNA, RNA_type) %>%
+  ungroup() %>%
+  mutate(se = ifelse(RNA_type == "mirna_zscore", NA, mrna_se_zscore)) # put NA for se for miRNAs
+```
+
+Plot
+```{r}
+# Ensure the timepoint column is a factor with the correct order
+plot_data$timepoint <- factor(plot_data$timepoint, levels = c("1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf"))
+
+# Function to create a single plot for each miRNA and its associated mRNAs
+create_mirna_mrna_plot <- function(data, mirna) {
+  ggplot(data, aes(x = timepoint, y = count, color = RNA_type, group = interaction(RNA_type, mRNA))) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    geom_errorbar(data = subset(data, RNA_type == "mrna_mean_zscore"),
+                  aes(ymin = count - se, ymax = count + se),
+                  width = 0.2) +
+    scale_color_manual(values = c("mirna_zscore" = "purple", "mrna_mean_zscore" = "orange")) +
+    labs(title = paste("miRNA:", mirna),
+         x = "Hours post fertilization",
+         y = "Z-score",
+         color = "RNA type") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.title = element_text(face = "bold", size = 12),
+      legend.text = element_text(size = 10),
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1)
+    )
+}
+
+# Group the data by miRNA
+miRNA_groups <- plot_data %>%
+  group_by(miRNA) %>%
+  group_split()
+
+# Create a list to store all plots
+plot_list <- list()
+
+# Loop through each miRNA group and create a plot
+for(i in seq_along(miRNA_groups)) {
+  current_group <- miRNA_groups[[i]]
+  current_miRNA <- unique(current_group$miRNA)
+  plot_list[[i]] <- create_mirna_mrna_plot(current_group, current_miRNA)
+}
+
+# Save all plots to a PDF
+pdf("../output/Molecular/miRNA_mRNA_interactions/zga2_miRNA_mRNA_sig_interactions_WGCNA_zscores.pdf", width = 12, height = 8)
+for (plot in plot_list) {
+  print(plot)
+}
+dev.off()
+```
+
+Make a network plot for genes in zga2 category targeted by miRNAs
+```{r}
+# Create the graph
+g <- graph_from_data_frame(zga2, directed = FALSE)
+
+# Add edge attributes
+E(g)$weight <- abs(E(g)$PCC.cor)  # Use absolute PCC for edge weight
+E(g)$color <- ifelse(E(g)$PCC.cor > 0, "red", "blue")  # Blue for positive, red for negative correlations
+
+# Add node attributes
+V(g)$type <- ifelse(V(g)$name %in% pairs_of_interest_pcc$miRNA, "miRNA", "mRNA")
+
+# Convert to tbl_graph for ggraph
+g_tbl <- as_tbl_graph(g)
+
+# Create plot
+p <- ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight, color = color), alpha = 0.6) +
+  geom_node_point(aes(color = type), size = 5) +
+  #geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  scale_edge_width(range = c(0.5, 3)) +
+  scale_color_manual(values = c("miRNA" = "purple", "mRNA" = "orange", "Positive correlation" = "blue", "Negative correlation" = "red")) +
+  theme_graph() +
+  labs(title = "miRNA-mRNA Interaction Network",
+       subtitle = "Edge width represents |PCC|, color represents correlation direction");p
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga2_significant_miRNA_mRNA_network.png", p, width = 12, height = 10, dpi = 300)
+```
+
+Count number of targets for each miRNA in zga2 module 
+```{r}
+# Count the number of target mRNAs for each miRNA
+result <- zga2 %>%
+  group_by(miRNA) %>%
+  summarise(num_queries = n_distinct(mRNA))
+
+# Plot number of targets for each miRNA
+target_num <- ggplot(result, aes(x = reorder(miRNA, -num_queries), y = num_queries)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.8) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20, unit = "pt")
+  ) +
+  labs(x = "miRNAs", y = "Number of Targets") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, max(result$num_queries) * 1.1)); target_num
+
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga2_significant_miRNA_num_targets.png", target_num, width = 12, height = 10, dpi = 300)
+ggsave("../output/Molecular/miRNA_mRNA_interactions/zga2_significant_miRNA_num_targets.pdf", target_num, width = 12, height = 10, dpi = 300)
 ```
 
 
-
-Look into these papers for analyses:
-
-- https://www.nature.com/articles/s42003-024-07092-7
-- https://genome.cshlp.org/content/22/6/1163 
-- https://www.3d-gene.com/en/service/analysis/ana_004.html 
 
 
 
