@@ -183,10 +183,41 @@ novel_filt <- novel %>%
   #na.omit()
 length(unique(novel_filt$provisional.id))
 length(unique(novel_filt$consensus.mature.sequence))
+length(unique(novel_filt$consensus.star.sequence))
+length(unique(novel_filt$consensus.precursor.sequence))
 
 # Save csv 
-write.csv(novel_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel_filt.csv")
+#write.csv(novel_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel_filt.csv")
 ```
+There are 50 novel miRNAs idenfitied but there are 41 unique mature miRNA sequences, which means we either have repeated sequences that are close to one another in the genome OR we have repeated sequences that have unique locations in the genome. I think I also need to look at the pdfs of the miRNAs to determine which ones are putative. 
+
+Look at the repeated sequences 
+```{r}
+# Count occurrences of each unique mature sequence
+sequence_counts <- table(novel_filt$consensus.mature.sequence)
+
+# Find sequences that appear more than once
+repeated_sequences <- sequence_counts[sequence_counts > 1]
+
+# Display the repeated sequences and their counts
+print(repeated_sequences)
+
+# Find the rows with repeated sequences
+repeated_rows <- novel_filt[novel_filt$consensus.mature.sequence %in% names(repeated_sequences), ]
+
+# Display the rows with repeated sequences
+print(repeated_rows)
+```
+
+`Montipora_capitata_HIv3___Scaffold_14_1001044` and `Montipora_capitata_HIv3___Scaffold_14_1001054` has the same mirdeep2 score and same mature read count, which makes me suspect that there is just one miRNA. Look at the pdfs of each identified miRNA (pdfs located [here](https://github.com/JillAshey/DevelopmentalTimeseries/tree/main/output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/pdfs_19_02_2025_t_14_06_12)). Looking at both pdfs, they look the exact same...I think these are technically the same. I will remove `Montipora_capitata_HIv3___Scaffold_14_1001054` from the miRNAs. 
+
+`Montipora_capitata_HIv3___Scaffold_9_581562` and `Montipora_capitata_HIv3___Scaffold_10_624116` have the same sequence but are on totally different chromosomes. The mature sequences look the same but the star sequences are slightly different. I feel comfortable saying these are different miRNAs. 
+
+
+
+
+
+
 
 Load the known miRNAs
 ```{r}

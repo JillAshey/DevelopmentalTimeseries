@@ -61,14 +61,14 @@ mirna_counts_df <- mirna_counts_df %>%
 
 # Collapse duplicate miRNAs
 mirna_counts_df <- mirna_counts_df %>%
-  group_by(X.miRNA) %>%
-  summarise(across(ends_with(".norm."), mean))
+  dplyr::group_by(X.miRNA) %>%
+  dplyr::summarise(across(ends_with(".norm."), mean))
 
 # Rename cols based on hpf 
-#colnames(mirna_counts_df) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+colnames(mirna_counts_df) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
 
 # Rename based on sample name
-colnames(mirna_counts_df) <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
+#colnames(mirna_counts_df) <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
 
 # Set row names
 mirna_counts_df <- mirna_counts_df %>%

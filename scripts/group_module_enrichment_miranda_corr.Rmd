@@ -3532,4 +3532,126 @@ ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_mirand
 ```
 
 
+# Assess info generated above 
+
+How many mRNA targets that are significantly correlated with their target miRNA are in the maternal module? How many pairs are positive vs negative?
+```{r}
+maternal_info <- all_info %>%
+  filter(category == "Maternal")
+length(unique(maternal_info$miRNA))
+length(unique(maternal_info$mRNA))
+
+# Count positive and negative PCC.cor values
+sum(maternal_info$PCC.cor > 0)
+sum(maternal_info$PCC.cor < 0)
+```
+
+Investigate enriched functions of maternal significant positive correlations 
+```{r}
+maternal_sig_pos_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_positive_corr.csv")
+length(unique(maternal_sig_pos_corr$miRNA))
+length(unique(maternal_sig_pos_corr$mRNA))
+length(unique(maternal_sig_pos_corr$Term))
+
+blah <- maternal_sig_pos_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+```
+
+Investigate enriched functions of maternal significant negative correlations 
+```{r}
+maternal_sig_neg_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.csv")
+length(unique(maternal_sig_neg_corr$miRNA))
+length(unique(maternal_sig_neg_corr$mRNA))
+length(unique(maternal_sig_neg_corr$Term))
+
+blah <- maternal_sig_neg_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+
+maternal_sig_neg_corr_annot <- maternal_sig_neg_corr %>%
+  inner_join(annot, by = c("mRNA" = "X.query"))
+```
+
+How many mRNA targets that are significantly correlated with their target miRNA are in the mzt1 module? How many pairs are positive vs negative?
+```{r}
+mzt1_info <- all_info %>%
+  filter(category == "MZT1")
+length(unique(mzt1_info$miRNA))
+length(unique(mzt1_info$mRNA))
+
+# Count positive and negative PCC.cor values
+sum(mzt1_info$PCC.cor > 0)
+sum(mzt1_info$PCC.cor < 0)
+```
+
+Investigate enriched functions of mzt1 significant positive correlations 
+```{r}
+mzt1_sig_pos_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt1_modules_miranda_sig_positive_corr.csv")
+length(unique(mzt1_sig_pos_corr$miRNA))
+length(unique(mzt1_sig_pos_corr$mRNA))
+length(unique(mzt1_sig_pos_corr$Term))
+
+blah <- mzt1_sig_pos_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+```
+
+Investigate enriched functions of mzt1 significant negative correlations 
+```{r}
+mzt1_sig_neg_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt1_modules_miranda_sig_negative_corr.csv")
+length(unique(mzt1_sig_neg_corr$miRNA))
+length(unique(mzt1_sig_neg_corr$mRNA))
+length(unique(mzt1_sig_neg_corr$Term))
+
+blah <- mzt1_sig_neg_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+
+mzt1_sig_neg_corr_annot <- mzt1_sig_neg_corr %>%
+  inner_join(annot, by = c("mRNA" = "X.query"))
+```
+
+How many mRNA targets that are significantly correlated with their target miRNA are in the mzt2 module? How many pairs are positive vs negative?
+```{r}
+mzt2_info <- all_info %>%
+  filter(category == "MZT2")
+length(unique(mzt2_info$miRNA))
+length(unique(mzt2_info$mRNA))
+
+# Count positive and negative PCC.cor values
+sum(mzt2_info$PCC.cor > 0)
+sum(mzt2_info$PCC.cor < 0)
+```
+
+Investigate enriched functions of mzt2 significant positive correlations 
+```{r}
+mzt2_sig_pos_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt2_modules_miranda_sig_positive_corr.csv")
+length(unique(mzt2_sig_pos_corr$miRNA))
+length(unique(mzt2_sig_pos_corr$mRNA))
+length(unique(mzt2_sig_pos_corr$Term))
+
+blah <- mzt2_sig_pos_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+```
+
+Investigate enriched functions of mzt2 significant negative correlations 
+```{r}
+mzt2_sig_neg_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt2_modules_miranda_sig_negative_corr.csv")
+length(unique(mzt2_sig_neg_corr$miRNA))
+length(unique(mzt2_sig_neg_corr$mRNA))
+length(unique(mzt2_sig_neg_corr$Term))
+
+blah <- mzt2_sig_neg_corr %>%
+  filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(mRNA))
+```
+
 
