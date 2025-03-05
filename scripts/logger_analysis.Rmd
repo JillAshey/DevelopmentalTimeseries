@@ -29,13 +29,13 @@ getwd()
 
 ## Read in Tidbit Hobo logger files 
 ```{r}
-tidbit.files <- list.files(path="../data/environmental/logger", pattern="*27.csv", full.names=TRUE)
+tidbit.files <- list.files(path="../data/environmental/logger_mcap", pattern="*27.csv", full.names=TRUE)
 
 tidbits <- setNames(tidbit.files, tidbit.files) %>%
     map_dfr(read_csv, .id = "logger") %>%
     rename(DateTime=`Date-Time (HST)`, temp.C=`Ch: 1 - Temperature   (°C)`)%>%
-    select(!`#`)%>%
-    select(logger, DateTime, temp.C)%>%
+    dplyr::select(!`#`)%>%
+    dplyr::select(logger, DateTime, temp.C)%>%
     mutate(logger=sub(".*/", "", logger))%>% #remove the path name
     mutate(logger=sub("_.*", "", logger))%>% #keep only the serial number 
     filter(!temp.C=="NA")

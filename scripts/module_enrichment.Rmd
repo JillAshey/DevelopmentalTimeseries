@@ -14,7 +14,7 @@ library(topGO)
 
 Read in modules from WGCNA
 ```{r}
-all_info <- read.csv("../output/WGCNA/module_gene_trait_correlations.csv")
+all_info <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 head(all_info)
 ```
 
@@ -24,11 +24,9 @@ Create new column for "Group" - maternal, MZT 1, MZT 2, ZGA 1 and ZGA 2 - based 
 ```{r}
 all_info_group <- all_info %>%
   mutate(Group = case_when(
-    moduleColor %in% c("midnightblue", "green", "lightgreen") ~ "Maternal",
-    moduleColor %in% c("darkturquoise", "lightyellow", "skyblue", "saddlebrown", "red", "paleturquoise") ~ "MZT1",
-    moduleColor %in% c("darkorange", "orange", "black", "cyan", "darkgreen") ~ "MZT2",
-    moduleColor %in% c("blue") ~ "ZGA1",
-    moduleColor %in% c("pink", "magenta") ~ "ZGA2",
+    moduleColor %in% c("skyblue", "yellow", "darkorange", "lightcyan", "lightgreen", "midnightblue") ~ "Maternal",
+    moduleColor %in% c("cyan", "darkgrey", "darkred", "greenyellow", "lightyellow", "salmon", "white", "grey60") ~ "MinorWave",
+    moduleColor %in% c("black", "brown", "darkgreen", "darkturquoise") ~ "MajorWave",
     TRUE ~ "Other"  # This will catch any other colors not specified above
   ))
 ```
@@ -232,10 +230,11 @@ GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_CC_En_sig_gene, GO_MF_En_sig_gene)
 # Calculate proportion of significant v annotated genes 
 GO_En_sig_gene <- GO_En_sig_gene %>%
   mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
+  na.omit() %>% 
+  inner_join(maternal, by = c("X.query" = "gene_id"))
 
 # Save as csv 
-write.csv(GO_En_sig_gene, "../output/Molecular/WGCNA/enrichment/GO_en_sig_maternal_modules.csv")
+write.csv(GO_En_sig_gene, "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_maternal_modules.csv")
 ```
 
 Plot 
@@ -276,22 +275,35 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
     strip.placement = "outside"    
   )
 
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_maternal_modules.png", last_plot(), width = 30, height = 40)
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_maternal_modules.pdf", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_maternal_modules.png", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_maternal_modules.pdf", last_plot(), width = 30, height = 40)
 ```
 
-## MZT1 
-
-Perform GO enrichment analyses for genes in MZT1 group. Subset MZT1 
+Further investigate functions
 ```{r}
-mzt1 <- all_info_group %>%
-  filter(Group == "MZT1")
+GO_En_sig_gene_BP_MF <- GO_En_sig_gene %>%
+  filter(ontology != "Cellular Components")
+length(unique(GO_En_sig_gene_BP_MF$X.query))
+length(unique(GO_En_sig_gene_BP_MF$Term))
+unique(GO_En_sig_gene_BP_MF$Term)
+
+result <- GO_En_sig_gene_BP_MF %>%
+  group_by(Term) %>%
+  summarise(num_queries = n_distinct(X.query))
+```
+
+## Minor Wave 
+
+Perform GO enrichment analyses for genes with minor group. Subset minor wave 
+```{r}
+minor <- all_info_group %>%
+  filter(Group == "MinorWave")
 ```
 
 Make list of genes for input to topGO
 ```{r}
 # Genes of interest 
-clust_genes <- as.character(mzt1$gene_id)
+clust_genes <- as.character(minor$gene_id)
 
 # All genes 
 all_genes <- as.character(all_info_group$gene_id)
@@ -383,11 +395,11 @@ GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
 Merge `GO_CC_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -431,11 +443,11 @@ GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
 Merge `GO_MF_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -456,10 +468,11 @@ GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_CC_En_sig_gene, GO_MF_En_sig_gene)
 # Calculate proportion of significant v annotated genes 
 GO_En_sig_gene <- GO_En_sig_gene %>%
   mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
+  na.omit() %>% 
+  inner_join(minor, by = c("X.query" = "gene_id"))
 
 # Save as csv 
-write.csv(GO_En_sig_gene, "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT1_modules.csv")
+write.csv(GO_En_sig_gene, "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_minor_wave_modules.csv")
 ```
 
 Plot 
@@ -500,22 +513,35 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
     strip.placement = "outside"    
   )
 
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT1_modules.png", last_plot(), width = 30, height = 40)
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT1_modules.pdf", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_minor_wave_modules.png", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_minor_wave_modules.pdf", last_plot(), width = 30, height = 40)
 ```
 
-## MZT2
-
-Perform GO enrichment analyses for genes in MZT2 group. Subset MZT2
+Further investigate functions
 ```{r}
-mzt2 <- all_info_group %>%
-  filter(Group == "MZT2")
+GO_En_sig_gene_BP_MF <- GO_En_sig_gene %>%
+  filter(ontology != "Cellular Components")
+length(unique(GO_En_sig_gene_BP_MF$X.query))
+length(unique(GO_En_sig_gene_BP_MF$Term))
+unique(GO_En_sig_gene_BP_MF$Term)
+
+result <- GO_En_sig_gene_BP_MF %>%
+  group_by(Term) %>%
+  summarise(num_queries = n_distinct(X.query))
+```
+
+## Major Wave 
+
+Perform GO enrichment analyses for genes with major group. Subset major wave 
+```{r}
+major <- all_info_group %>%
+  filter(Group == "MajorWave")
 ```
 
 Make list of genes for input to topGO
 ```{r}
 # Genes of interest 
-clust_genes <- as.character(mzt2$gene_id)
+clust_genes <- as.character(major$gene_id)
 
 # All genes 
 all_genes <- as.character(all_info_group$gene_id)
@@ -559,11 +585,11 @@ GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
 Merge `GO_BP_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -607,11 +633,11 @@ GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
 Merge `GO_CC_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -655,11 +681,11 @@ GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
 Merge `GO_MF_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -680,14 +706,18 @@ GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_CC_En_sig_gene, GO_MF_En_sig_gene)
 # Calculate proportion of significant v annotated genes 
 GO_En_sig_gene <- GO_En_sig_gene %>%
   mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
+  na.omit() %>% 
+  inner_join(major, by = c("X.query" = "gene_id"))
 
 # Save as csv 
-write.csv(GO_En_sig_gene, "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT2_modules.csv")
+write.csv(GO_En_sig_gene, "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_major_wave_modules.csv")
 ```
 
 Plot 
 ```{r}
+# Read in data again if needed
+#GO_En_sig_gene <- read.csv("../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_major_wave_modules.csv")
+
 plot_data <- GO_En_sig_gene %>%
   filter(ontology != "Cellular Components") %>%
   group_by(Term, ontology) %>%
@@ -724,469 +754,24 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
     strip.placement = "outside"    
   )
 
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT2_modules.png", last_plot(), width = 30, height = 40)
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_MZT2_modules.pdf", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_major_wave_modules.png", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/WGCNA/enrichment/GO_en_sig_major_wave_modules.pdf", last_plot(), width = 30, height = 40)
 ```
 
-## ZGA1
-
-Perform GO enrichment analyses for genes in ZGA1 group. Subset ZGA1 
+Further investigate functions
 ```{r}
-zga1 <- all_info_group %>%
-  filter(Group == "ZGA1")
+GO_En_sig_gene_BP_MF <- GO_En_sig_gene %>%
+  filter(ontology != "Cellular Components")
+length(unique(GO_En_sig_gene_BP_MF$X.query))
+length(unique(GO_En_sig_gene_BP_MF$Term))
+unique(GO_En_sig_gene_BP_MF$Term)
+
+result <- GO_En_sig_gene_BP_MF %>%
+  group_by(Term) %>%
+  summarise(num_queries = n_distinct(X.query))
 ```
 
-Make list of genes for input to topGO
-```{r}
-# Genes of interest 
-clust_genes <- as.character(zga1$gene_id)
 
-# All genes 
-all_genes <- as.character(all_info_group$gene_id)
-
-# Apply 1 or 0 if gene is gene of interest 
-GeneList <- factor(as.integer(all_genes %in% clust_genes))
-names(GeneList) <- all_genes
-```
-
-The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
-
-### Biological Processes
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
-GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
-GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
-```
-
-Merge `GO_BP_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_BP_En_sig_gene <- annot %>%
-  left_join(GO_BP_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_BP_En_sig_gene$ontology <- "Biological Processes"
-```
-
-### Cellular Components
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_CC <-new("topGOdata", ontology="CC", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_CC_FE <- runTest(GO_CC, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_CC_En <- GenTable(GO_CC, Fisher = GO_CC_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_CC_En$Fisher<-as.numeric(GO_CC_En$Fisher)
-GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_CC_En$Fisher<-as.numeric(GO_CC_En$Fisher)
-GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
-```
-
-Merge `GO_CC_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_CC_En_sig_gene <- annot %>%
-  left_join(GO_CC_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_CC_En_sig_gene$ontology <- "Cellular Components"
-```
-
-### Molecular Functions
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
-GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
-GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
-```
-
-Merge `GO_MF_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_MF_En_sig_gene <- annot %>%
-  left_join(GO_MF_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_MF_En_sig_gene$ontology <- "Molecular Functions"
-```
-
-### Join ontologies 
-
-Bind so there is a df that has significantly enriched GO terms for all ontologies 
-```{r}
-GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_CC_En_sig_gene, GO_MF_En_sig_gene)
-
-# Calculate proportion of significant v annotated genes 
-GO_En_sig_gene <- GO_En_sig_gene %>%
-  mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
-
-# Save as csv 
-write.csv(GO_En_sig_gene, "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA1_modules.csv")
-```
-
-Plot 
-```{r}
-plot_data <- GO_En_sig_gene %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(X.query),
-            Fisher = mean(Fisher), .groups = 'drop') %>%
-  group_by(ontology) %>%
-  slice_max(order_by = gene_count, n = 10)
-
-ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
-  geom_bar(stat = "identity") +
-  #geom_text(aes(label = gene_count), vjust = -0.5, color = "black", size = 3) +
-  coord_flip() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  facet_grid(vars(ontology), scales = "free", space = "free_y") + 
-  labs(x = "GO Term",
-       y = "Number of Genes",
-       fill = "Fisher Value") +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 36, face = "bold"),        # Axis title size
-    axis.text = element_text(size = 34, colour = "black"),                        # Axis text size
-    legend.title = element_text(size = 34, face = "bold"),      # Legend title size
-    legend.text = element_text(size = 32),                      # Legend text size
-    strip.text = element_text(size = 34, face = "bold"),        # Facet text size
-    strip.background = element_rect(fill = "lightgray", color = "black", size = 1.5),         # Facet background
-    axis.line = element_line(size = 1, colour = "black"),       # Enhanced axis lines
-    axis.ticks = element_line(size = 1),                        # Thicker axis ticks
-     #panel.border = element_blank()                             # Remove panel border
-    #panel.grid.major = element_blank(),                         # Remove major grid lines
-    #panel.grid.minor = element_blank()                          # Remove minor grid lines
-        panel.border = element_rect(color = "black", size = 1.2),   # Enhanced facet border lines
-    panel.grid.major = element_line(size = 0.5, color = "gray"), # Grid lines inside the facets
-    panel.spacing = unit(1, "lines"),                           # Increase space between facets
-    strip.placement = "outside"    
-  )
-
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA1_modules.png", last_plot(), width = 30, height = 40)
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA1_modules.pdf", last_plot(), width = 30, height = 40)
-```
-
-## ZGA2
-
-Perform GO enrichment analyses for genes in ZGA2 group. Subset ZGA2
-```{r}
-zga2 <- all_info_group %>%
-  filter(Group == "ZGA2")
-```
-
-Make list of genes for input to topGO
-```{r}
-# Genes of interest 
-clust_genes <- as.character(zga2$gene_id)
-
-# All genes 
-all_genes <- as.character(all_info_group$gene_id)
-
-# Apply 1 or 0 if gene is gene of interest 
-GeneList <- factor(as.integer(all_genes %in% clust_genes))
-names(GeneList) <- all_genes
-```
-
-The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
-
-### Biological Processes
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
-GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
-GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
-```
-
-Merge `GO_BP_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_BP_En_sig_gene <- annot %>%
-  left_join(GO_BP_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_BP_En_sig_gene$ontology <- "Biological Processes"
-```
-
-### Cellular Components
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_CC <-new("topGOdata", ontology="CC", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_CC_FE <- runTest(GO_CC, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_CC_En <- GenTable(GO_CC, Fisher = GO_CC_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_CC_En$Fisher<-as.numeric(GO_CC_En$Fisher)
-GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_CC_En$Fisher<-as.numeric(GO_CC_En$Fisher)
-GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
-```
-
-Merge `GO_CC_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_CC_En_sig_gene <- annot %>%
-  left_join(GO_CC_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_CC_En_sig_gene$ontology <- "Cellular Components"
-```
-
-### Molecular Functions
-
-Create `topGOdata` object, which is required for topGO analysis
-```{r}
-GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
-```
-
-Run GO enrichment test 
-```{r}
-GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
-```
-
-Generate results table 
-```{r}
-GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
-```
-
-Filter by significant results
-```{r}
-GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
-GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
-```
-
-Filter by significant results
-```{r}
-GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
-GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
-```
-
-Merge `GO_MF_En_sig` with GO and gene info. 
-```{r}
-# Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
-
-# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
-GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
-
-# Join the datasets based on GO term
-GO_MF_En_sig_gene <- annot %>%
-  left_join(GO_MF_En_sig, by = c("GOs" = "GO.ID")) %>%
-  na.omit()
-
-# Add ontology column 
-GO_MF_En_sig_gene$ontology <- "Molecular Functions"
-```
-
-### Join ontologies 
-
-Bind so there is a df that has significantly enriched GO terms for all ontologies 
-```{r}
-GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_CC_En_sig_gene, GO_MF_En_sig_gene)
-
-# Calculate proportion of significant v annotated genes 
-GO_En_sig_gene <- GO_En_sig_gene %>%
-  mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
-
-# Save as csv 
-write.csv(GO_En_sig_gene, "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA2_modules.csv")
-```
-
-Plot 
-```{r}
-plot_data <- GO_En_sig_gene %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(X.query),
-            Fisher = mean(Fisher), .groups = 'drop') %>%
-  group_by(ontology) %>%
-  slice_max(order_by = gene_count, n = 10)
-
-ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
-  geom_bar(stat = "identity") +
-  #geom_text(aes(label = gene_count), vjust = -0.5, color = "black", size = 3) +
-  coord_flip() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  facet_grid(vars(ontology), scales = "free", space = "free_y") + 
-  labs(x = "GO Term",
-       y = "Number of Genes",
-       fill = "Fisher Value") +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 36, face = "bold"),        # Axis title size
-    axis.text = element_text(size = 34, colour = "black"),                        # Axis text size
-    legend.title = element_text(size = 34, face = "bold"),      # Legend title size
-    legend.text = element_text(size = 32),                      # Legend text size
-    strip.text = element_text(size = 34, face = "bold"),        # Facet text size
-    strip.background = element_rect(fill = "lightgray", color = "black", size = 1.5),         # Facet background
-    axis.line = element_line(size = 1, colour = "black"),       # Enhanced axis lines
-    axis.ticks = element_line(size = 1),                        # Thicker axis ticks
-     #panel.border = element_blank()                             # Remove panel border
-    #panel.grid.major = element_blank(),                         # Remove major grid lines
-    #panel.grid.minor = element_blank()                          # Remove minor grid lines
-        panel.border = element_rect(color = "black", size = 1.2),   # Enhanced facet border lines
-    panel.grid.major = element_line(size = 0.5, color = "gray"), # Grid lines inside the facets
-    panel.spacing = unit(1, "lines"),                           # Increase space between facets
-    strip.placement = "outside"    
-  )
-
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA2_modules.png", last_plot(), width = 30, height = 40)
-ggsave(filename = "../output/Molecular/WGCNA/enrichment/GO_en_sig_ZGA2_modules.pdf", last_plot(), width = 30, height = 40)
-```
-
-## Summary 
-
-Read csvs back in for summary information
-```{r}
-maternal <- read.csv("../output/Molecular/WGCNA/enrichment/GO_en_sig_maternal_modules.csv")
-blah <- GO_En_sig_gene %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(X.query))
-
-```
 
 
 

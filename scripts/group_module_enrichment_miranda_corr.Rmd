@@ -709,7 +709,7 @@ GO_En_sig_gene <- rbind(GO_BP_En_sig_gene_maternal, GO_CC_En_sig_gene_maternal, 
 # Calculate proportion of significant v annotated genes 
 GO_En_sig_gene <- GO_En_sig_gene %>%
   mutate(sig.prop = Significant/Annotated) %>%
-  na.omit()
+  na.omit() 
 
 # Save as csv 
 write.csv(GO_En_sig_gene, "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.csv")
@@ -756,6 +756,7 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.png", last_plot(), width = 30, height = 40)
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.pdf", last_plot(), width = 30, height = 40)
 ```
+
 
 # Minor Wave
 
@@ -3562,23 +3563,11 @@ ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_mirand
 ```
 
 
-# Assess info generated above 
+# Assess GO terms
 
 Read in annot info
 ```{r}
 annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt")
-```
-
-How many mRNA targets that are significantly correlated with their target miRNA are in the maternal module? How many pairs are positive vs negative?
-```{r}
-maternal_info <- all_info %>%
-  filter(category == "Maternal")
-length(unique(maternal_info$miRNA))
-length(unique(maternal_info$mRNA))
-
-# Count positive and negative PCC.cor values
-sum(maternal_info$PCC.cor > 0)
-sum(maternal_info$PCC.cor < 0)
 ```
 
 Investigate enriched functions of maternal significant positive correlations 
@@ -3592,6 +3581,11 @@ blah <- maternal_sig_pos_corr %>%
   filter(ontology != "Cellular Components") %>%
   group_by(Term, ontology) %>%
   summarise(gene_count = n_distinct(mRNA))
+
+maternal_sig_pos_corr_annot <- maternal_sig_pos_corr %>%
+  inner_join(annot, by = c("mRNA" = "X.query"))
+length(unique(maternal_sig_pos_corr_annot$Preferred_name))
+unique(maternal_sig_pos_corr_annot$Preferred_name)
 ```
 
 Investigate enriched functions of maternal significant negative correlations 
@@ -3612,91 +3606,28 @@ length(unique(maternal_sig_neg_corr_annot$Preferred_name))
 unique(maternal_sig_neg_corr_annot$Preferred_name)
 ```
 
-How many mRNA targets that are significantly correlated with their target miRNA are in the mzt1 module? How many pairs are positive vs negative?
+Plot the preferred names of maternal negative correlations
 ```{r}
-mzt1_info <- all_info %>%
-  filter(category == "MZT1")
-length(unique(mzt1_info$miRNA))
-length(unique(mzt1_info$mRNA))
+plot_data <- maternal_sig_neg_corr_annot %>%
+  distinct(Preferred_name, p_value, PCC.cor) %>%
+  arrange(p_value)
 
-# Count positive and negative PCC.cor values
-sum(mzt1_info$PCC.cor > 0)
-sum(mzt1_info$PCC.cor < 0)
+# Create the plot
+ggplot(plot_data, aes(x = p_value, y = reorder(Preferred_name, -p_value), color = PCC.cor)) +
+  geom_point(size = 3) +
+  #scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  #scale_x_log10() +  # Use log scale for p-values
+  theme_bw() +
+  labs(x = "p-value", 
+       y = "", 
+       color = "PCC correlation")+
+  theme(axis.text.y = element_text(size = 8))  # Adjust text size if needed
+
+# Save the plot if desired
+# ggsave("gene_correlations_plot.png", width = 10, height = 12, dpi = 300)
+
 ```
 
-Investigate enriched functions of mzt1 significant positive correlations 
-```{r}
-mzt1_sig_pos_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt1_modules_miranda_sig_positive_corr.csv")
-length(unique(mzt1_sig_pos_corr$miRNA))
-length(unique(mzt1_sig_pos_corr$mRNA))
-length(unique(mzt1_sig_pos_corr$Term))
-
-blah <- mzt1_sig_pos_corr %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(mRNA))
-```
-
-Investigate enriched functions of mzt1 significant negative correlations 
-```{r}
-mzt1_sig_neg_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt1_modules_miranda_sig_negative_corr.csv")
-length(unique(mzt1_sig_neg_corr$miRNA))
-length(unique(mzt1_sig_neg_corr$mRNA))
-length(unique(mzt1_sig_neg_corr$Term))
-
-blah <- mzt1_sig_neg_corr %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(mRNA))
-
-mzt1_sig_neg_corr_annot <- mzt1_sig_neg_corr %>%
-  inner_join(annot, by = c("mRNA" = "X.query"))
-length(unique(mzt1_sig_neg_corr_annot$Preferred_name))
-unique(mzt1_sig_neg_corr_annot$Preferred_name)
-```
-
-How many mRNA targets that are significantly correlated with their target miRNA are in the mzt2 module? How many pairs are positive vs negative?
-```{r}
-mzt2_info <- all_info %>%
-  filter(category == "MZT2")
-length(unique(mzt2_info$miRNA))
-length(unique(mzt2_info$mRNA))
-
-# Count positive and negative PCC.cor values
-sum(mzt2_info$PCC.cor > 0)
-sum(mzt2_info$PCC.cor < 0)
-```
-
-Investigate enriched functions of mzt2 significant positive correlations 
-```{r}
-mzt2_sig_pos_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt2_modules_miranda_sig_positive_corr.csv")
-length(unique(mzt2_sig_pos_corr$miRNA))
-length(unique(mzt2_sig_pos_corr$mRNA))
-length(unique(mzt2_sig_pos_corr$Term))
-
-blah <- mzt2_sig_pos_corr %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(mRNA))
-```
-
-Investigate enriched functions of mzt2 significant negative correlations 
-```{r}
-mzt2_sig_neg_corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_mzt2_modules_miranda_sig_negative_corr.csv")
-length(unique(mzt2_sig_neg_corr$miRNA))
-length(unique(mzt2_sig_neg_corr$mRNA))
-length(unique(mzt2_sig_neg_corr$Term))
-
-blah <- mzt2_sig_neg_corr %>%
-  filter(ontology != "Cellular Components") %>%
-  group_by(Term, ontology) %>%
-  summarise(gene_count = n_distinct(mRNA))
-
-mzt2_sig_neg_corr_annot <- mzt2_sig_neg_corr %>%
-  inner_join(annot, by = c("mRNA" = "X.query"))
-length(unique(mzt2_sig_neg_corr_annot$Preferred_name))
-unique(mzt2_sig_neg_corr_annot$Preferred_name)
-```
 
 
 

@@ -446,13 +446,11 @@ geneInfo = data.frame(gene = names(datExpr),
 
 # Read in gene id information 
 gene_id <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")[,1]
+all_info <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 
 # Bind gene_id with geneInfo and save as csv 
 all_info <- cbind(geneInfo, gene_id)
 write.csv(all_info, "../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
-
-# Read in again if needed
-all_info <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 
 # Count number of genes in each module 
 num_genes <- all_info %>%
