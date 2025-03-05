@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(topGO)
+library(igraph)
+library(ggraph)
 ```
 
 # Miranda and significant correlation data enrichment of miRNA targets
@@ -3534,6 +3536,11 @@ ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_mirand
 
 # Assess info generated above 
 
+Read in annot info
+```{r}
+annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt")
+```
+
 How many mRNA targets that are significantly correlated with their target miRNA are in the maternal module? How many pairs are positive vs negative?
 ```{r}
 maternal_info <- all_info %>%
@@ -3573,6 +3580,8 @@ blah <- maternal_sig_neg_corr %>%
 
 maternal_sig_neg_corr_annot <- maternal_sig_neg_corr %>%
   inner_join(annot, by = c("mRNA" = "X.query"))
+length(unique(maternal_sig_neg_corr_annot$Preferred_name))
+unique(maternal_sig_neg_corr_annot$Preferred_name)
 ```
 
 How many mRNA targets that are significantly correlated with their target miRNA are in the mzt1 module? How many pairs are positive vs negative?
@@ -3614,6 +3623,8 @@ blah <- mzt1_sig_neg_corr %>%
 
 mzt1_sig_neg_corr_annot <- mzt1_sig_neg_corr %>%
   inner_join(annot, by = c("mRNA" = "X.query"))
+length(unique(mzt1_sig_neg_corr_annot$Preferred_name))
+unique(mzt1_sig_neg_corr_annot$Preferred_name)
 ```
 
 How many mRNA targets that are significantly correlated with their target miRNA are in the mzt2 module? How many pairs are positive vs negative?
@@ -3652,6 +3663,12 @@ blah <- mzt2_sig_neg_corr %>%
   filter(ontology != "Cellular Components") %>%
   group_by(Term, ontology) %>%
   summarise(gene_count = n_distinct(mRNA))
+
+mzt2_sig_neg_corr_annot <- mzt2_sig_neg_corr %>%
+  inner_join(annot, by = c("mRNA" = "X.query"))
+length(unique(mzt2_sig_neg_corr_annot$Preferred_name))
+unique(mzt2_sig_neg_corr_annot$Preferred_name)
 ```
+
 
 

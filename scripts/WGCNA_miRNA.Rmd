@@ -64,15 +64,15 @@ mirna_counts_df <- mirna_counts_df %>%
   dplyr::group_by(X.miRNA) %>%
   dplyr::summarise(across(ends_with(".norm."), mean))
 
-# Rename cols based on hpf 
-colnames(mirna_counts_df) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
-
-# Rename based on sample name
-#colnames(mirna_counts_df) <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
-
 # Set row names
 mirna_counts_df <- mirna_counts_df %>%
   column_to_rownames("X.miRNA")
+
+# Rename cols based on hpf 
+#colnames(mirna_counts_df) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
+
+# Rename based on sample name
+colnames(mirna_counts_df) <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
 ```
 
 To run WGCNA, I need more replicates than n=1. To create this, I am going to take each existing column and create 3 new columns (ie M9_1, M9_2, M9_3 etc). For each new column, I will: 
@@ -82,18 +82,17 @@ To run WGCNA, I need more replicates than n=1. To create this, I am going to tak
 
 This will introduce some variability without super different values. The new values will be within +- 10%, 20%, and 30% respectively. Initially, I tried to do +1, +2, and +3 to the values but this did not add enough variation to move forward with vst. 
 ```{r}
-
 set.seed(123)  # for reproducibility
 
 result <- mirna_counts_df %>%
   mutate(across(everything(), 
                 list(
-                  "1" = ~.x * runif(n(), 0.9, 1.1),
-                  "2" = ~.x * runif(n(), 0.8, 1.2),
-                  "3" = ~.x * runif(n(), 0.7, 1.3)
+                  "_1" = ~.x * runif(n(), 0.9, 1.1),
+                  "_2" = ~.x * runif(n(), 0.8, 1.2),
+                  "_3" = ~.x * runif(n(), 0.7, 1.3)
                 ),
                 .names = "{.col}_{.fn}")) %>%
-  select(unlist(map(names(mirna_counts_df), ~c(.x, paste0(.x, "_1"), paste0(.x, "_2"), paste0(.x, "_3")))))
+  dplyr::select(unlist(map(names(mirna_counts_df), ~c(.x, paste0(.x, "_1"), paste0(.x, "_2"), paste0(.x, "_3")))))
 ```
 
 Convert to integers 

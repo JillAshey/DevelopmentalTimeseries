@@ -45,7 +45,7 @@ library(RColorBrewer)
 library(pheatmap)
 library(dendextend)
 library(ComplexHeatmap)
-sessionInfo()
+#sessionInfo()
 ```
 
 Read in filtered counts
@@ -67,6 +67,12 @@ meta_filt <- meta %>%
   filter(TubeID %in% colnames(counts))
 ```
 
+Remove M14 and M61 - these are outliers (based on PCA)
+```{r}
+counts <- counts[, !(colnames(counts) %in% c("M14", "M61"))]
+meta_filt <- meta_filt[!(meta_filt$TubeID %in% c("M14", "M61")), ]
+```
+
 Reorder columns in filtered counts matrix so that it matches the metadata
 ```{r}
 counts <- counts[, meta_filt$TubeID]
@@ -78,7 +84,7 @@ all(rownames(meta_filt$TubeID) == colnames(counts)) #are they the same in the sa
 
 Set levels of factors 
 ```{r}
-meta_filt$hpf <- factor(meta_filt$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+meta_filt$hpf <- factor(meta_filt$hpf, levels = c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72"))
 ```
 
 Construct DESeq data set
@@ -137,8 +143,8 @@ powers = c(c(1:10), seq(from = 12, to=20, by=2))
 # Call the network topology analysis function
 
 #the below takes a long time to run, so is commented out and the pre-run results are loaded in below. I need to save it to my desktop because it is too large to push to github. Instead, it will go on OSF
-#sft <- pickSoftThreshold(datExpr, powerVector = powers, verbose = 5) #...wait for this to finish
-#save(sft, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/sft.RData")
+sft <- pickSoftThreshold(datExpr, powerVector = powers, verbose = 5) #...wait for this to finish
+save(sft, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/sft.RData")
 load("~/Desktop/PutnamLab/DevelopmentalTimeseries/sft.RData")
 
 # pickSoftThreshold 
@@ -186,9 +192,9 @@ adjacency_sign = adjacency(datExpr, power = softPower, type="signed")  #Calculat
 
 ```{r}
 #the below takes a long time to run, so is commented out and the pre-run results are loaded in below
-#TOM_sign = TOMsimilarity(adjacency_sign, TOMType="signed") #Translate adjacency into topological overlap matrix
-#save(TOM_sign, file = "../output/WGCNA/TOM_sign.Rdata")
-load("../output/WGCNA/TOM_sign.Rdata")
+TOM_sign = TOMsimilarity(adjacency_sign, TOMType="signed") #Translate adjacency into topological overlap matrix
+save(TOM_sign, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/TOM_sign.Rdata")
+load("~/Desktop/PutnamLab/DevelopmentalTimeseries/TOM_sign.Rdata")
 
 dissTOM_sign   = 1-TOM_sign
 ```
@@ -233,7 +239,7 @@ plotDendroAndColors(geneTree_sign, dynamicColors_sign, "Dynamic Tree Cut - SIGNE
                     main = "Gene dendrogram and module colors 'SIGNED'")
 
 sizeGrWindow(8,6)
-png("../output/WGCNA/GeneDendrogram.png", 1000, 1000, pointsize=20)
+png("../output/Molecular/mRNA/WGCNA/GeneDendrogram.png", 1000, 1000, pointsize=20)
 plotDendroAndColors(geneTree_sign, dynamicColors_sign, "Dynamic Tree Cut - SIGNED",
                     dendroLabels = FALSE, hang = 0.03,
                     addGuide = TRUE, guideHang = 0.05,
@@ -261,7 +267,7 @@ MEDiss = 1-cor(MEs, use = "pairwise.complete.obs");
 METree = hclust(as.dist(MEDiss), method = "average");
 # Plot the result
 sizeGrWindow(7, 6)
-png("../output/WGCNA/ClusterEigengenes.png", 1000, 1000, pointsize=20)
+png("../output/Molecular/mRNA/WGCNA/ClusterEigengenes.png", 1000, 1000, pointsize=20)
 plot(METree, main = "Clustering of module eigengenes - SIGNED (dissimilarity calc = MEDiss = 1-cor(MEs))",
      xlab = "", sub = "")
 MEDissThres = 0.15 
@@ -270,7 +276,7 @@ dev.off()
 ```
 
 ###  Step 7: Specify the cut line for the dendrogram (module) - Calc MODULE EIGENGENES (mergeMEs)
-#### We had 31 modules before merging, and 17 modules after merging
+#### We had 30 modules before merging, and 18 modules after merging
 
 ```{r}
 MEDissThres = 0.15 # **Merge modules with >85% eigengene similarity.** Most studies use somewhere between 80-90% similarity. I will use 85% similarity as my merging threshold.
@@ -296,7 +302,7 @@ plot(METree2, main = "Clustering of module eigengenes - SIGNED (dissimilarity ca
 
 
 sizeGrWindow(7, 6)
-png("../output/WGCNA/ClusterEigengenes_merged.png", 1000, 1000, pointsize=20)
+png("../output/Molecular/mRNA/WGCNA/ClusterEigengenes_merged.png", 1000, 1000, pointsize=20)
 plot(METree2, main = "Clustering of module eigengenes - SIGNED (dissimilarity calc = MEDiss = 1-cor(MEs))",
      xlab = "", sub = "")
 dev.off()
@@ -312,7 +318,7 @@ plotDendroAndColors(geneTree_sign, cbind(dynamicColors_sign, mergedColors),
 
 sizeGrWindow(12, 9)
 
-png("../output/WGCNA/ClusterDendrogram_signed.png", 1000, 1000, pointsize=20)
+png("../output/Molecular/mRNA/WGCNA/ClusterDendrogram_signed.png", 1000, 1000, pointsize=20)
 plotDendroAndColors(geneTree_sign, cbind(dynamicColors_sign, mergedColors),
                     c("Dynamic Tree Cut", "Merged dynamic"),
                     dendroLabels = FALSE, hang = 0.03,
@@ -329,9 +335,9 @@ colorOrder = c("grey", standardColors(50));
 moduleLabels = match(moduleColors, colorOrder)-1;
 MEs = mergedMEs;
 # Save module colors and labels for use in subsequent parts
-save(MEs, moduleLabels, moduleColors, geneTree_sign, file = "../output/WGCNA/networkConstruction-stepByStep.RData")
+save(MEs, moduleLabels, moduleColors, geneTree_sign, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/networkConstruction-stepByStep.RData")
 # write csv - save the module eigengenes
-write.csv(MEs, file = "../output/WGCNA/WGCNA_ModuleEigengenes.csv")
+write.csv(MEs, file = "../output/Molecular/mRNA/WGCNA/WGCNA_ModuleEigengenes.csv")
 table(mergedColors)
 ```
 
@@ -340,67 +346,67 @@ table(mergedColors)
 #Prepare trait data. Data has to be numeric, so I will substitute hpf for numeric values. The "trait" we are considering here is hpf. Make a dataframe that has a column for each hpf and a row for samples. Populate a 1 for samples that match a specific hpf and a 0 for samples not matching. This process changes hpf from a categorical variable into a binary variable. This will allow for correlations between mean eigengenes and habitat of origin.  
 allTraits <- names(meta_filt$hpf)
 allTraits$hpf_1 <- c(1, 1, 1, 1, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_4 <- c(0, 0, 0, 0, # 1hpf
-                    1, 1, 1, 1, # 4hpf
+                    1, 1, 1, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_9 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     1, 1, 1, 1, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_14 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     1, 1, 1, 1, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_22 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     1, 1, 1, 1, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_28 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    1, 1, 1, 1, # 28hpf
+                    1, 1, 1, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_48 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     1, 1, 1, 1,# 48hpf
                     0, 0, 0, 0) # 72hpf
 allTraits$hpf_72 <- c(0, 0, 0, 0, # 1hpf
-                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, # 4hpf
                     0, 0, 0, 0, # 9hpf
                     0, 0, 0, 0, # 14hpf
                     0, 0, 0, 0, # 22hpf
-                    0, 0, 0, 0, # 28hpf
+                    0, 0, 0, # 28hpf
                     0, 0, 0, 0, # 48hpf
                     1, 1, 1, 1) # 72hpf
 datTraits <- as.data.frame(allTraits)
@@ -443,10 +449,10 @@ gene_id <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")[,1]
 
 # Bind gene_id with geneInfo and save as csv 
 all_info <- cbind(geneInfo, gene_id)
-#write.csv(all_info, "../output/WGCNA/module_gene_trait_correlations.csv")
+write.csv(all_info, "../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 
 # Read in again if needed
-all_info <- read.csv("../output/WGCNA/module_gene_trait_correlations.csv")
+all_info <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
 
 # Count number of genes in each module 
 num_genes <- all_info %>%
@@ -478,12 +484,17 @@ heatmappval <- signif(moduleTraitPvalue, 1)
 htmap.colors <- names(MEs)
 htmap.colors <- gsub("ME", "", htmap.colors)
 
-pdf(file = "../output/WGCNA/Module-trait-relationship-heatmap.pdf", height = 11.5, width = 8)
+# Set so that life stages are in order 
+hpf_order <- c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72")
+
+pdf(file = "../output/Molecular/mRNA/WGCNA/Module-trait-relationship-heatmap.pdf", height = 11.5, width = 8)
 ht=Heatmap(moduleTraitCor, name = "Eigengene", column_title = "Module-Trait Eigengene Correlation", 
         col = blueWhiteRed(50), 
         row_names_side = "left", row_dend_side = "left",
         width = unit(4, "in"), height = unit(8.5, "in"), 
-        column_order = 1:8, column_dend_reorder = FALSE, cluster_columns = hclust(dist(t(moduleTraitCor)), method = "average"), column_split = 4, column_dend_height = unit(0.5, "in"),
+        column_order = match(hpf_order, colnames(moduleTraitCor)),
+        column_dend_reorder = FALSE, 
+        column_split = c(1,1,1,2,2,2,3,3), column_dend_height = unit(0.5, "in"),
         cluster_rows = METree, row_split = 17, row_gap = unit(2.5, "mm"), border = TRUE,
         cell_fun = function(j, i, x, y, w, h, col) {
         if(heatmappval[i, j] <= 0.05) {
@@ -498,9 +509,9 @@ draw(ht)
 dev.off()
 ```
 
-Make ME boxplots by hpf 
+Plot by module 
 ```{r}
-MEs <- read.csv("../output/WGCNA/WGCNA_ModuleEigengenes.csv")
+MEs <- read.csv("../output/Molecular/mRNA/WGCNA/WGCNA_ModuleEigengenes.csv")
 MEs_table <- MEs # new table for plotting 
 #MEs_table$X <- paste0("M", MEs_table$X)
 #MEs_table$TubeID <- rownames(MEs) # call rows as coolumn to merge with treatment data
@@ -508,48 +519,79 @@ MEsPlotting <- MEs_table %>%
   full_join(meta_filt, by = c("X" = "TubeID")) %>%
   dplyr::select(-c("Date", "Metric", "EmbryosPerTube"))
 
-# Average modules to form the following groups: Maternal, MZT1, MZT2, ZGA1, ZGA2
+MEsPlotting_long <- MEsPlotting %>%
+  pivot_longer(cols = -c(X, hpf), names_to = "Module", values_to = "Eigengene")
+
+# Create the faceted boxplot
+ggplot(MEsPlotting_long, aes(x = hpf, y = Eigengene, fill = hpf)) +
+  geom_boxplot() +
+  facet_wrap(~ Module, scales = "free_y", ncol = 4) +  # Adjust ncol as needed
+  labs(title = "Module Eigengenes Across Time",
+       x = "Hours Post Fertilization",
+       y = "Eigengene Value") +
+  geom_hline(
+    yintercept = 0,
+    linetype = 'dotted',
+    color = 'black',
+    size = 0.5) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  scale_x_discrete(limits = c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72")) +
+  scale_fill_brewer(palette = "Set2") +  # You can change the color palette as needed
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_rect(fill = "lightgrey", color = NA),
+    strip.text = element_text(face = "bold")
+  )
+ggsave("../output/Molecular/mRNA/WGCNA/module_boxplot.pdf", plot = last_plot(), height = 15, width = 25)
+ggsave("../output/Molecular/mRNA/WGCNA/module_boxplot.png", plot = last_plot(), height = 15, width = 25)
+```
+
+Based on the boxplots, here is how I am grouping each module: 
+
+- Maternal - skyblue, yellow, darkorange, lightcyan, lightgreen, midnightblue
+- Minor wave - cyan, darkgrey, darkred, greenyellow, lightyellow, salmon, white, grey60
+- Major wave - black, brown, dark green, darkturquoise
+
+Make plots of groups
+```{r}
+MEs <- read.csv("../output/Molecular/mRNA/WGCNA/WGCNA_ModuleEigengenes.csv")
+MEs_table <- MEs # new table for plotting 
+#MEs_table$X <- paste0("M", MEs_table$X)
+#MEs_table$TubeID <- rownames(MEs) # call rows as coolumn to merge with treatment data
+MEsPlotting <- MEs_table %>%
+  full_join(meta_filt, by = c("X" = "TubeID")) %>%
+  dplyr::select(-c("Date", "Metric", "EmbryosPerTube"))
+
+# Average modules to form the following groups: Maternal, Minor wave, Major wave
 ## Group 1: Maternal
 maternal <- MEsPlotting %>%
-  dplyr::select(MEmidnightblue, MEgreen, MElightgreen) %>%
+  dplyr::select(MEskyblue, MEyellow, MEdarkorange, MElightcyan, MElightgreen, MEmidnightblue) %>%
   dplyr::rowwise() %>%
   dplyr::mutate(Maternal_avg = mean(c_across(everything())))
 
-## Group 2: Wave 1 MZT
-wave1_mzt <- MEsPlotting %>%
-  dplyr::select(MEdarkturquoise, MElightyellow, MEskyblue, MEsaddlebrown, MEred, MEpaleturquoise) %>%
+## Group 2: Minor Wave
+minor <- MEsPlotting %>%
+  dplyr::select(MEcyan, MEdarkgrey, MEdarkred, MEgreenyellow, MElightyellow, MEsalmon, MEwhite, MEgrey60) %>%
   dplyr::rowwise() %>%
-  dplyr::mutate(Wave1_MZT_avg = mean(c_across(everything())))
+  dplyr::mutate(MinorWave_avg = mean(c_across(everything())))
 
-## Group 3: Wave 2 MZT
-wave2_mzt <- MEsPlotting %>%
-  dplyr::select(MEdarkorange, MEorange, MEblack, MEcyan, MEdarkgreen) %>%
+## Group 3: Major Wave
+major <- MEsPlotting %>%
+  dplyr::select(MEblack, MEbrown, MEdarkgreen, MEdarkturquoise) %>%
   dplyr::rowwise() %>%
-  dplyr::mutate(Wave2_MZT_avg = mean(c_across(everything())))
-
-## Group 4: ZGA1
-zga1 <- MEsPlotting %>%
-  dplyr::select(MEblue) %>%
-  dplyr::rename(ZGA1_avg = MEblue)
-# zga <- MEsPlotting %>%
-#   dplyr::select(MEblue, MEpink, MEmagenta) %>%
-#   dplyr::rowwise() %>%
-#   dplyr::mutate(ZGA_avg = mean(c_across(everything())))
-
-## Group 5: ZGA2
-zga2 <- MEsPlotting %>%
-  dplyr::select(MEpink, MEmagenta) %>%
-  dplyr::rowwise() %>%
-  dplyr::mutate(ZGA2_avg = mean(c_across(everything())))
+  dplyr::mutate(MajorWave_avg = mean(c_across(everything())))
 
 # Combine all averages
 MEsPlotting_avg <- bind_cols(
   MEsPlotting %>% dplyr::select(X, hpf),
   maternal %>% dplyr::select(Maternal_avg),
-  wave1_mzt %>% dplyr::select(Wave1_MZT_avg),
-  wave2_mzt %>% dplyr::select(Wave2_MZT_avg),
-  zga1,
-  zga2 %>% dplyr::select(ZGA2_avg)
+  minor %>% dplyr::select(MinorWave_avg),
+  major %>% dplyr::select(MajorWave_avg)
 )
 
 MEsPlotting_melt <- melt(MEsPlotting_avg, id.vars = c("X", "hpf"))
@@ -593,8 +635,8 @@ MEplot <- ggplot(MEsPlotting_melt, aes(x = hpf, y = value, fill = factor(hpf))) 
     strip.background = element_rect(fill = "lightgrey", color = NA),
     strip.text = element_text(face = "bold")
   ); MEplot
-#ggsave("../output/WGCNA/MEs_boxplot.pdf", plot = MEplot, height = 15, width = 25)
-#ggsave("../output/WGCNA/MEs_boxplot.png", plot = MEplot, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA/WGCNA/groups_boxplot.pdf", plot = MEplot, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA/WGCNA/groups_boxplot.png", plot = MEplot, height = 15, width = 25)
 
 # Plot as line plot 
 MEplot_line <- ggplot(MEsPlotting_melt, aes(x = factor(hpf), y = value, group = 1)) +
@@ -638,19 +680,21 @@ MEplot_line <- ggplot(MEsPlotting_melt, aes(x = factor(hpf), y = value, group = 
     axis.text.x = element_text(hjust = 1)
   ); MEplot_line
 
-#ggsave("../output/WGCNA/MEs_lineplot.pdf", plot = MEplot_line, height = 15, width = 25)
-#ggsave("../output/WGCNA/MEs_lineplot.png", plot = MEplot_line, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA/WGCNA/groups_lineplot.pdf", plot = MEplot_line, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA/WGCNA/groups_lineplot.png", plot = MEplot_line, height = 15, width = 25)
 ```
+
+- Maternal - skyblue, yellow, darkorange, lightcyan, lightgreen, midnightblue
+- Minor wave - cyan, darkgrey, darkred, greenyellow, lightyellow, salmon, white, grey60
+- Major wave - black, brown, dark green, darkturquoise
 
 Add Groups to `all_info` to see how many genes are in each group 
 ```{r}
 all_info_group <- all_info %>%
   mutate(Group = case_when(
-    moduleColor %in% c("midnightblue", "green", "lightgreen") ~ "Maternal",
-    moduleColor %in% c("darkturquoise", "lightyellow", "skyblue", "saddlebrown", "red", "paleturquoise") ~ "Wave1_MZT",
-    moduleColor %in% c("darkorange", "orange", "black", "cyan", "darkgreen") ~ "Wave2_MZT",
-    moduleColor %in% c("blue") ~ "ZGA1",
-    moduleColor %in% c("pink", "magenta") ~ "ZGA2",
+    moduleColor %in% c("skyblue", "yellow", "darkorange", "lightcyan", "lightgreen", "midnightblue") ~ "Maternal",
+    moduleColor %in% c("cyan", "darkgrey", "darkred", "greenyellow", "lightyellow", "salmon", "white", "grey60") ~ "MinorWave",
+    moduleColor %in% c("black", "brown", "darkgreen", "darkturquoise") ~ "MajorWave",
     TRUE ~ "Other"  # This will catch any other colors not specified above
   ))
 
@@ -658,7 +702,6 @@ all_info_group <- all_info %>%
 num_genes_group <- all_info_group %>%
   dplyr::group_by(Group) %>%
   dplyr::summarise(num_queries = n_distinct(gene_id))
-
 ```
 
 

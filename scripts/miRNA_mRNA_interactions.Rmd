@@ -24,7 +24,6 @@ mrna_counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
 # Set row names
 rownames(mrna_counts) <- mrna_counts[,1] #set first column that contains gene names as rownames
 mrna_counts <- mrna_counts[,-1] # remove column w/ gene names 
-mrna_counts <- as.num
 ```
 
 Normalize with RPM
@@ -112,7 +111,7 @@ mirna_counts_df <- mirna_counts_df %>%
 # Collapse duplicate miRNAs
 mirna_counts_df <- mirna_counts_df %>%
   group_by(X.miRNA) %>%
-  summarise(across(ends_with(".norm."), mean))
+  dplyr::summarise(across(ends_with(".norm."), mean))
 
 # Rename cols based on hpf 
 colnames(mirna_counts_df) <- c("mirna", "1_hpf", "4_hpf", "9_hpf", "14_hpf", "22_hpf", "28_hpf", "48_hpf", "72_hpf")
@@ -360,24 +359,28 @@ gene_corr <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlat
 # Add categories
 gene_corr_cats <- gene_corr %>%
   mutate(category = case_when(
-    moduleColor %in% c("midnightblue", "green", "lightgreen") ~ "Maternal",
-    moduleColor %in% c("darkturquoise", "lightyellow", "skyblue", "saddlebrown", "red", "paleturquoise") ~ "MZT1",
-    moduleColor %in% c("darkorange", "orange", "black", "cyan", "darkgreen") ~ "MZT2",
-    moduleColor == "blue" ~ "ZGA1",
-    moduleColor %in% c("pink", "magenta") ~ "ZGA2",
-    TRUE ~ "Other"  # This catches any moduleColors not specified above
+    moduleColor %in% c("skyblue", "yellow", "darkorange", "lightcyan", "lightgreen", "midnightblue") ~ "Maternal",
+    moduleColor %in% c("cyan", "darkgrey", "darkred", "greenyellow", "lightyellow", "salmon", "white", "grey60") ~ "MinorWave",
+    moduleColor %in% c("black", "brown", "darkgreen", "darkturquoise") ~ "MajorWave",
+    TRUE ~ "Other"  # This will catch any other colors not specified above
   ))
+```
+
+Read in pcc results again if needed
+```{r}
+combined_data_pcc <- read.csv("../output/Molecular/miRNA_mRNA_interactions/miranda_PCC_miRNA_mRNA.csv")
+pairs_of_interest_pcc <- read.csv("../output/Molecular/miRNA_mRNA_interactions/miranda_PCC_sig_miRNA_mRNA.csv")
 ```
 
 Merge with `pairs_of_interest_pcc` and `combined_data_pcc`. 
 ```{r}
 combined_data_pcc_gene_corr_cats <- combined_data_pcc %>%
   inner_join(gene_corr_cats, by = c("mRNA" = "gene_id"))
-write.csv(combined_data_pcc_gene_corr_cats, "../output/Molecular/miRNA_mRNA_interactions/gene_corr_miranda_PCC_miRNA_mRNA.csv")
+#write.csv(combined_data_pcc_gene_corr_cats, "../output/Molecular/miRNA_mRNA_interactions/gene_corr_miranda_PCC_miRNA_mRNA.csv")
 
 sig_combined_data_pcc_gene_corr_cats <- pairs_of_interest_pcc %>%
   inner_join(gene_corr_cats, by = c("mRNA" = "gene_id"))
-write.csv(sig_combined_data_pcc_gene_corr_cats, "../output/Molecular/miRNA_mRNA_interactions/gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
+#write.csv(sig_combined_data_pcc_gene_corr_cats, "../output/Molecular/miRNA_mRNA_interactions/gene_corr_miranda_PCC_sig_miRNA_mRNA.csv")
 ```
 
 ## Maternal 
@@ -386,6 +389,8 @@ Subset maternal
 ```{r}
 maternal <- sig_combined_data_pcc_gene_corr_cats %>%
   filter(category == "Maternal")
+length(unique(maternal$miRNA))
+length(unique(maternal$mRNA))
 ```
 
 Summarize maternal data
@@ -584,7 +589,6 @@ dev.off()
 
 Make a network plot for genes in maternal category targeted by miRNAs
 ```{r}
-
 # Create the graph
 g <- graph_from_data_frame(maternal, directed = FALSE)
 
@@ -637,7 +641,20 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/maternal_significant_miRNA_n
 ggsave("../output/Molecular/miRNA_mRNA_interactions/maternal_significant_miRNA_num_targets.pdf", target_num, width = 12, height = 10, dpi = 300)
 ```
 
-## MZT1 
+## Minor Wave 
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Subset mzt1 
 ```{r}
@@ -1404,5 +1421,104 @@ ggsave("../output/Molecular/miRNA_mRNA_interactions/zga2_significant_miRNA_num_t
 
 
 
+```{r}
+# Load required libraries
+library(tidyverse)
+library(pheatmap)
+library(DESeq2)
+library(corrplot)
+
+## 1. Data preprocessing and normalization
+
+
+# Normalize counts using DESeq2
+normalize_counts <- function(counts) {
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = data.frame(sample = colnames(counts)),
+                                design = ~ 1)
+  dds <- estimateSizeFactors(dds)
+  normalized_counts <- counts(dds, normalized = TRUE)
+  return(normalized_counts)
+}
+
+mirna_norm <- normalize_counts(mirna_counts_df)
+mrna_norm <- normalize_counts(mrna_counts)
+
+# Scale data for comparison
+scale_data <- function(data) {
+  t(scale(t(data)))
+}
+
+mirna_scaled <- scale_data(mirna_norm)
+mrna_scaled <- scale_data(mrna_norm)
+
+## 2. Temporal expression analysis
+
+# Function to plot expression heatmap
+plot_expression_heatmap <- function(data, title) {
+  pheatmap(data,
+           main = title,
+           show_rownames = FALSE,
+           cluster_cols = FALSE)
+}
+
+plot_expression_heatmap(mirna_counts_df, "miRNA expression over time")
+plot_expression_heatmap(mrna_counts, "mRNA expression over time")
+
+# Hierarchical clustering
+plot_dendrogram <- function(data, title) {
+  hc <- hclust(dist(t(data)))
+  plot(hc, main = title, xlab = "Genes/miRNAs", ylab = "Distance")
+}
+
+plot_dendrogram(mirna_scaled, "miRNA expression clustering")
+plot_dendrogram(mrna_scaled, "mRNA expression clustering")
+
+## 3. Identification of MZT and ZGA-related patterns
+
+identify_mzt_zga_genes <- function(data, threshold = 0.8) {
+  time_points <- 1:ncol(data)
+  results <- apply(data, 1, function(x) {
+    lm_result <- lm(x ~ time_points)
+    c(slope = coef(lm_result)[2],
+      r_value = sqrt(summary(lm_result)$r.squared))
+  })
+  results_df <- as.data.frame(t(results))
+  results_df$Gene <- rownames(results_df)
+  results_df <- results_df[abs(results_df$r_value) > threshold, ]
+  results_df <- results_df[order(-abs(results_df$slope)), ]
+  return(results_df)
+}
+
+mirna_mzt_zga <- identify_mzt_zga_genes(mirna_scaled)
+mrna_mzt_zga <- identify_mzt_zga_genes(mrna_scaled)
+
+print("Top miRNAs potentially involved in MZT/ZGA:")
+print(head(mirna_mzt_zga))
+print("Top mRNAs potentially involved in MZT/ZGA:")
+print(head(mrna_mzt_zga))
+
+## 4. miRNA-mRNA interaction analysis
+
+find_mirna_mrna_correlations <- function(mirna_data, mrna_data, threshold = 0.7) {
+  cor_matrix <- cor(t(mirna_data), t(mrna_data))
+  cor_df <- as.data.frame(as.table(cor_matrix))
+  colnames(cor_df) <- c("miRNA", "mRNA", "Correlation")
+  cor_df <- cor_df[abs(cor_df$Correlation) > threshold, ]
+  cor_df <- cor_df[order(-abs(cor_df$Correlation)), ]
+  return(cor_df)
+}
+
+mirna_mrna_correlations <- find_mirna_mrna_correlations(mirna_scaled, mrna_scaled)
+print("Top miRNA-mRNA correlations:")
+print(head(mirna_mrna_correlations))
+
+# Visualize top correlations
+top_correlations <- head(mirna_mrna_correlations, 20)
+cor_matrix <- reshape2::acast(top_correlations, miRNA ~ mRNA, value.var = "Correlation")
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black")
+
+```
 
 
