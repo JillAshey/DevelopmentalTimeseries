@@ -154,11 +154,11 @@ GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
 Merge `GO_CC_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -206,11 +206,11 @@ GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
 Merge `GO_MF_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -339,11 +339,11 @@ GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
 Merge `GO_BP_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -391,11 +391,11 @@ GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
 Merge `GO_CC_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -443,11 +443,11 @@ GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
 Merge `GO_MF_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -576,11 +576,11 @@ GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
 Merge `GO_BP_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -628,11 +628,11 @@ GO_CC_En_sig<-GO_CC_En[GO_CC_En$Fisher<0.05,]
 Merge `GO_CC_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
-annot$GOs <- trimws(annot$GOs)
+#annot$GOs <- trimws(annot$GOs)
 GO_CC_En_sig$GO.ID <- trimws(GO_CC_En_sig$GO.ID)
 
 # Join the datasets based on GO term
@@ -680,8 +680,8 @@ GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
 Merge `GO_MF_En_sig` with GO and gene info. 
 ```{r}
 # Separate GO terms 
-annot <- annot %>%
-  separate_rows(GOs, sep = ";")
+#annot <- annot %>%
+#  separate_rows(GOs, sep = ";")
 
 # Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
 annot$GOs <- trimws(annot$GOs)
@@ -756,6 +756,34 @@ ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fish
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.png", last_plot(), width = 30, height = 40)
 ggsave(filename = "../output/Molecular/miRNA_mRNA_interactions/enrichment_miranda_corr/GO_en_sig_maternal_modules_miranda_sig_negative_corr.pdf", last_plot(), width = 30, height = 40)
 ```
+
+# Minor Wave
+
+
+
+
+
+
+# Major Wave 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # MZT1 
 
