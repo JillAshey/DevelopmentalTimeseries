@@ -688,6 +688,8 @@ ggsave("../output/Molecular/mRNA/WGCNA/groups_lineplot.png", plot = MEplot_line,
 
 Add Groups to `all_info` to see how many genes are in each group 
 ```{r}
+all_info <- read.csv("../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations.csv")
+
 all_info_group <- all_info %>%
   mutate(Group = case_when(
     moduleColor %in% c("skyblue", "yellow", "darkorange", "lightcyan", "lightgreen", "midnightblue") ~ "Maternal",
@@ -695,6 +697,9 @@ all_info_group <- all_info %>%
     moduleColor %in% c("black", "brown", "darkgreen", "darkturquoise") ~ "MajorWave",
     TRUE ~ "Other"  # This will catch any other colors not specified above
   ))
+
+# Save as csv
+write.csv(all_info_group, "../output/Molecular/mRNA/WGCNA/module_gene_trait_correlations_groups.csv")
 
 # Count number of genes in each group 
 num_genes_group <- all_info_group %>%
