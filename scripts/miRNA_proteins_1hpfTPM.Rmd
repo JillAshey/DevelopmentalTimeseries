@@ -1,0 +1,70 @@
+---
+title: "1 hpf TPM of miRNA-related proteins"
+author: "Jill Ashey"
+date: "2025-03-22"
+output: html_document
+---
+
+This script will assess expression of miRNA-related proteins in samples collected at 1 hpf.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+Read in filtered counts
+```{r}
+counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+```
+
+Select only 1 hpf samples
+```{r}
+counts_1hpf <- counts[,1:5]
+colnames(counts_1hpf)[1] <- "gene_id"
+```
+
+Calculate average of M6:M9
+```{r}
+counts_1hpf$avg <- rowMeans(counts_1hpf[, 2:5])
+```
+
+Subset transcripts of interest (identified [here](https://github.com/JillAshey/DevelopmentalTimeseries/blob/main/output/Molecular/blast/Mcap_smallRNA_results.txt)).
+```{r}
+subset_df <- subset(counts_1hpf, 
+                    gene_id %in% c("Montipora_capitata_HIv3___RNAseq.g40601.t1", # Drosha
+                                 "Montipora_capitata_HIv3___RNAseq.g8840.t1", # DGCR8
+                                 "Montipora_capitata_HIv3___TS.g29815.t1", # Serrate
+                                 "Montipora_capitata_HIv3___RNAseq.g16466.t1", # Dicer
+                                 "Montipora_capitata_HIv3___RNAseq.g37396.t1", # Ago
+                                 "Montipora_capitata_HIv3___TS.g46924.t1", # HEN1
+                                 "Montipora_capitata_HIv3___RNAseq.g43323.t1", # HYL1
+                                 "Montipora_capitata_HIv3___RNAseq.g47961.t1")) # HYL1
+```
+
+Add transcript length as a column (length information can be found [here](https://github.com/JillAshey/DevelopmentalTimeseries/blob/main/output/Molecular/blast/Mcap_smallRNA_results.txt)).
+```{r}
+subset_df$length <- c(1576, 
+                      1889,
+                      628,
+                      673,
+                      1017,
+                      1259,
+                      743,
+                      544)
+```
+
+Calculate TPM
+```{r}
+# Convert gene length from bases to kilobases
+subset_df$length_kb <- subset_df$length / 1000
+
+# Calculate RPK (Reads Per Kilobase)
+subset_df$RPK <- subset_df$avg / subset_df$length_kb
+
+# Sum of all RPK values
+sum_RPK <- sum(subset_df$RPK)
+
+# Calculate TPM
+subset_df$TPM <- (subset_df$RPK / sum_RPK) * 1e6
+```
