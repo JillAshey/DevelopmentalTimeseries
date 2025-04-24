@@ -1,0 +1,178 @@
+---
+title: "TPM DEGs"
+author: "Jill Ashey"
+date: "2025-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+Read in GFF to calculate transcript length
+```{r}
+gff <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.gff3", header = F)
+colnames(gff) <- c("seqid", "source", "type", "start", "end", "score", "strand", "phase", "attributes")
+```
+
+Select only transcripts and calculate transcript length
+```{r}
+gff_transcript <- gff %>%
+  filter(type == "transcript") %>%
+  mutate(length = end - start)
+```
+
+Save gene id and length as csv
+```{r}
+gff_transcript$gene_id <- gsub("ID=", "", gff_transcript$attributes)
+
+lengths_df <- gff_transcript[, c("length", "gene_id")]
+write.csv(lengths_df, "../data/Molecular/transcript_lengths.csv", row.names = FALSE)
+```
+
+Read in filtered counts data
+```{r}
+counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+colnames(counts)[1] <- "gene_id"
+
+# Remove M14 and M61, they are outliers 
+counts <- counts[, !(colnames(counts) %in% c("M14", "M61"))]
+```
+
+Join counts with length info. This is needed to calculate TPM. 
+```{r}
+counts_length <- counts %>%
+  inner_join(lengths_df, by = "gene_id")
+```
+
+```{r}
+# Get gene lengths in kilobases
+length_kb <- counts_length$length / 1000
+
+# Extract count columns (excluding gene_id and length)
+count_cols <- setdiff(names(counts_length), c("gene_id", "length"))
+
+# Calculate RPK (Reads Per Kilobase)
+RPK <- sweep(counts_length[, count_cols], 1, length_kb, FUN = "/")
+
+# Sum all RPK values for each sample
+sum_RPK <- colSums(RPK)
+
+# Calculate TPM
+TPM <- sweep(RPK, 2, sum_RPK, FUN = "/") * 1e6
+
+# Bind gene id to TPM
+TPM_df <- cbind(gene_id = counts_length$gene_id, TPM)
+
+# Log transform 
+TPM_df[,-1] <- log2(TPM_df[,-1] + 1)
+
+# Save as csv
+write.csv(TPM_df, "../data/Molecular/mRNA/TPM_log.csv")
+```
+
+Now we want to compare the DEs using the TPMs. We already did the differential expression analysis in [this code](https://github.com/JillAshey/DevelopmentalTimeseries/blob/main/scripts/mRNA_DEG.Rmd). 
+
+Read in metadata for downstream analysis
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples (and removes the outlier samples)
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts))
+```
+
+## 1 v 4 hpf TPM
+
+Read in 1v4hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v4_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 4hpf and average across replicates
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_4hpf <- de_results_tpm[, c("M10", "M11", "M13")]
+TPM_4hpf$avg_4hpf <- rowMeans(TPM_4hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_4hpf = TPM_4hpf$avg_4hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_4hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_4hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "tomato", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (4 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+
+
+
+
+
+Read in 1v72hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v72_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 72hpf and average across replicates
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_4hpf <- de_results_tpm[, c("M85", "M86", "M87", "M88")]
+TPM_4hpf$avg_4hpf <- rowMeans(TPM_4hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_4hpf = TPM_4hpf$avg_4hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_4hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_4hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "tomato", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (72 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+
+
+

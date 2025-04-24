@@ -22,6 +22,353 @@ library(tidygraph)
 library(ggraph)
 ```
 
+## rRNA depleted libraries - differential expression 
+
+### 1v4 hpf
+
+Read in 1v4hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v4_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+```
+
+Subset genes that were downregulated (aka upregulated at 1hpf)
+```{r}
+hpf_1 <- de_results %>%
+  filter(regulation == "Up at 1 hpf")
+```
+
+Read in gene2go info 
+```{r}
+mcap_gene2go <- read.delim("../data/Molecular/Mcap_V3_gene2go.tab", sep = "\t")
+```
+
+Make list of genes for input to topGO
+```{r}
+# Genes of interest 
+clust_genes <- as.character(hpf_1$gene_id)
+
+# All genes 
+all_genes <- as.character(mcap_gene2go$X.query)
+
+# Apply 1 or 0 if gene is gene of interest 
+GeneList <- factor(as.integer(all_genes %in% clust_genes))
+names(GeneList) <- all_genes
+```
+
+The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
+
+Read in gene-to-go-mappings
+```{r}
+gene2go_topgo <- readMappings("../data/Molecular/Mcap_V3_gene2go.tab", IDsep=";")
+```
+
+Set function to select genes of interest (ie those that have pvalue < 0.05)
+```{r}
+topDiffGenes <- function(allScore) {
+return(allScore < 0.05)}
+```
+
+#### Biological Processes
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
+GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
+```
+
+Merge `GO_BP_En_sig` with GO and gene info. 
+```{r}
+# Separate GO terms 
+mcap_gene2go <- mcap_gene2go %>%
+  separate_rows(GOs, sep = ";")
+
+# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
+mcap_gene2go$GOs <- trimws(mcap_gene2go$GOs)
+GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
+
+# Join the datasets based on GO term
+GO_BP_En_sig_gene <- mcap_gene2go %>%
+  left_join(GO_BP_En_sig, by = c("GOs" = "GO.ID")) %>%
+  na.omit()
+
+# Add ontology column 
+GO_BP_En_sig_gene$ontology <- "Biological Processes"
+```
+
+#### Molecular Function
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+Run GO enrichment test 
+```{r}
+GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
+GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
+```
+
+Merge `GO_MF_En_sig` with GO and gene info. 
+```{r}
+# Separate GO terms 
+# annot <- annot %>%
+#   separate_rows(GOs, sep = ";")
+
+# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
+# annot$GOs <- trimws(annot$GOs)
+GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
+
+# Join the datasets based on GO term
+GO_MF_En_sig_gene <- mcap_gene2go %>%
+  left_join(GO_MF_En_sig, by = c("GOs" = "GO.ID")) %>%
+  na.omit()
+
+# Add ontology column 
+GO_MF_En_sig_gene$ontology <- "Molecular Functions"
+```
+
+Bind so there is a df that has significantly enriched GO terms for all ontologies 
+```{r}
+GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_MF_En_sig_gene)
+
+# Calculate proportion of significant v annotated genes 
+GO_En_sig_gene <- GO_En_sig_gene %>%
+  mutate(sig.prop = Significant/Annotated) %>%
+  na.omit()
+length(unique(GO_En_sig_gene$Term))
+
+# Save as csv 
+##write.csv(GO_En_sig_gene, "../output/Molecular/mRNA/enrichment/GO_en_sig_February_expressed_genes.csv")
+```
+
+Plot
+```{r}
+plot_data <- GO_En_sig_gene %>%
+  #filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(X.query),
+            Fisher = mean(Fisher), .groups = 'drop') %>%
+  group_by(ontology) %>%
+  slice_max(order_by = gene_count, n = 10)
+
+ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
+  #expand_limits(y = 1.5) +
+  #ylim(1, 7.25) +
+  # Add horizontal lines with a single aesthetic value
+  #geom_hline(yintercept = -log10(0.01), linetype = "longdash", colour = "black", linewidth = .6) +
+  #geom_hline(yintercept = -log10(0.001), linetype = "solid", colour = "black", linewidth = .6) +
+  geom_point(shape = 21) + 
+  #scale_size(range = c(2, 12)) + 
+  scale_fill_continuous(low = "#1AD3D1FF", high = "#4686FBFF") +
+  xlab('') + 
+  ylab('Number of genes') +
+  #labs(caption = 'Cut-off lines at p=0.01 and p=0.001') +
+  theme_bw() +
+  facet_grid(vars(ontology), scales = "free", space = "free_y") +
+  coord_flip()
+```
+
+### 1v4 hpf
+
+Subset genes that were UPregulated (aka upregulated at 4hpf)
+```{r}
+hpf_1 <- de_results %>%
+  filter(regulation == "Up at 4 hpf")
+```
+
+Make list of genes for input to topGO
+```{r}
+# Genes of interest 
+clust_genes <- as.character(hpf_1$gene_id)
+
+# All genes 
+all_genes <- as.character(mcap_gene2go$X.query)
+
+# Apply 1 or 0 if gene is gene of interest 
+GeneList <- factor(as.integer(all_genes %in% clust_genes))
+names(GeneList) <- all_genes
+```
+
+The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
+
+#### Biological Processes
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
+GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
+```
+
+Merge `GO_BP_En_sig` with GO and gene info. 
+```{r}
+# Separate GO terms 
+mcap_gene2go <- mcap_gene2go %>%
+  separate_rows(GOs, sep = ";")
+
+# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
+mcap_gene2go$GOs <- trimws(mcap_gene2go$GOs)
+GO_BP_En_sig$GO.ID <- trimws(GO_BP_En_sig$GO.ID)
+
+# Join the datasets based on GO term
+GO_BP_En_sig_gene <- mcap_gene2go %>%
+  left_join(GO_BP_En_sig, by = c("GOs" = "GO.ID")) %>%
+  na.omit()
+
+# Add ontology column 
+GO_BP_En_sig_gene$ontology <- "Biological Processes"
+```
+
+#### Molecular Function
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+Run GO enrichment test 
+```{r}
+GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
+GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
+```
+
+Merge `GO_MF_En_sig` with GO and gene info. 
+```{r}
+# Separate GO terms 
+# annot <- annot %>%
+#   separate_rows(GOs, sep = ";")
+
+# Ensure GO terms in both datasets are formatted similarly (trim whitespaces)
+# annot$GOs <- trimws(annot$GOs)
+GO_MF_En_sig$GO.ID <- trimws(GO_MF_En_sig$GO.ID)
+
+# Join the datasets based on GO term
+GO_MF_En_sig_gene <- mcap_gene2go %>%
+  left_join(GO_MF_En_sig, by = c("GOs" = "GO.ID")) %>%
+  na.omit()
+
+# Add ontology column 
+GO_MF_En_sig_gene$ontology <- "Molecular Functions"
+```
+
+Bind so there is a df that has significantly enriched GO terms for all ontologies 
+```{r}
+GO_En_sig_gene <- rbind(GO_BP_En_sig_gene, GO_MF_En_sig_gene)
+
+# Calculate proportion of significant v annotated genes 
+GO_En_sig_gene <- GO_En_sig_gene %>%
+  mutate(sig.prop = Significant/Annotated) %>%
+  na.omit()
+length(unique(GO_En_sig_gene$Term))
+
+# Save as csv 
+##write.csv(GO_En_sig_gene, "../output/Molecular/mRNA/enrichment/GO_en_sig_February_expressed_genes.csv")
+```
+
+Plot
+```{r}
+plot_data <- GO_En_sig_gene %>%
+  #filter(ontology != "Cellular Components") %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(X.query),
+            Fisher = mean(Fisher), .groups = 'drop') %>%
+  group_by(ontology) %>%
+  slice_max(order_by = gene_count, n = 10)
+
+ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
+  #expand_limits(y = 1.5) +
+  #ylim(1, 7.25) +
+  # Add horizontal lines with a single aesthetic value
+  #geom_hline(yintercept = -log10(0.01), linetype = "longdash", colour = "black", linewidth = .6) +
+  #geom_hline(yintercept = -log10(0.001), linetype = "solid", colour = "black", linewidth = .6) +
+  geom_point(shape = 21) + 
+  #scale_size(range = c(2, 12)) + 
+  scale_fill_continuous(low = "#1AD3D1FF", high = "#4686FBFF") +
+  xlab('') + 
+  ylab('Number of genes') +
+  #labs(caption = 'Cut-off lines at p=0.01 and p=0.001') +
+  theme_bw() +
+  facet_grid(vars(ontology), scales = "free", space = "free_y") +
+  coord_flip()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OLD code below as of 4/24/25
+
 Read in correlation data generated from mirTarRnaSeq 
 ```{r}
 corr <- read.csv("../output/Molecular/miRNA_mRNA_interactions/mirtarrnaseq_correlations_data.csv")

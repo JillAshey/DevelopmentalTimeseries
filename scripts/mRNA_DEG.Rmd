@@ -172,7 +172,7 @@ ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) +
 
 PCA separates beautifully!! There are a couple of outliers -- M14 from 4hpf and M61 from 28 hpf. Will need to remove these before proceeding. 
 
-Generate a publication style PCA - still have not removed outliers as of 2/14/25.  
+Generate a publication style PCA  
 ```{r}
 pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
 
@@ -200,9 +200,46 @@ ggsave("../output/Molecular/mRNA/PCA_all_genes.pdf", plot = last_plot())
 ggsave("../output/Molecular/mRNA/PCA_all_genes.png", plot = last_plot())
 ```
 
-Run test using the LRT to look for effect of lifestage as a whole across our experiment. There is only one main effect, so the reduced model is just the intercept.    
+Plot gene count for specific genes of interest (or all genes) over time (vst transformed counts)
+```{r}
+# Transform counts
+vst_counts <- vst(gdds, blind = TRUE)
+vst_mat <- assay(vst_counts)
+
+# Pivot to long
+vst_long <- vst_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "TubeID", values_to = "vst_count")
+
+# Join with metadata
+vst_long <- vst_long %>%
+  left_join(meta_filt, by = "TubeID")
+
+# Plot
+gene_of_interest <- "Montipora_capitata_HIv3___TS.g49315.t1a"
+plot_summary <- vst_long %>%
+  filter(gene == gene_of_interest) %>%
+  group_by(hpf) %>%
+  summarize(
+    mean_vst = mean(vst_count, na.rm = TRUE),
+    se_vst = sd(vst_count, na.rm = TRUE) / sqrt(n())) %>%
+  mutate(hpf = factor(hpf, levels = unique(meta_filt$hpf)))  # consistent ordering
+ggplot(plot_summary, aes(x = hpf, y = mean_vst, group = 1)) +
+  geom_point(size = 3, color = "darkblue") +
+  geom_line(color = "darkblue", linewidth = 0.5) +
+  geom_errorbar(aes(ymin = mean_vst - se_vst, ymax = mean_vst + se_vst), width = 0.2, color = "darkblue") +
+  labs(x = "Hours Post Fertilization (hpf)",
+    y = "Mean VST Normalized Count ± SE"
+  ) +
+  theme_minimal()
+```
+
+Run test using the LRT to look for effect of lifestage as a whole across our experiment. There is only one main effect, so the reduced model is just the intercept. We are using LRT per recommendations from the DESeq2 [manual](https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html), which states about time-series experiments: "There are a number of ways to analyze time-series experiments, depending on the biological question of interest. In order to test for any differences over multiple time points, once can use a design including the time factor, and then test using the likelihood ratio test as described in the following section, where the time factor is removed in the reduced formula."
 ```{r, message = FALSE}
 DEG <- DESeq(gdds, test="LRT", reduced=~1)
+
+boo <- DESeq(gdds)
 ```
 
 Save all DE results, regardless of significance 
@@ -235,7 +272,27 @@ dim(DEG_results_vst)
 DEG_results_vst <- varianceStabilizingTransformation(DEG_results_vst) 
 ```
 
-Make a heatmap later 
+Plot a heatmap to sample to sample distances  
+```{r}
+gsampleDists <- dist(t(assay(DEG_results_vst))) #calculate distance matix
+gsampleDistMatrix <- as.matrix(gsampleDists) #distance matrix
+rownames(gsampleDistMatrix) <- colnames(DEG_results_vst) #assign row names
+colnames(gsampleDistMatrix) <- NULL #assign col names
+#colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255) #assign colors
+
+save_pheatmap_pdf <- function(x, filename, width=7, height=7) {
+   stopifnot(!missing(x))
+   stopifnot(!missing(filename))
+   pdf(filename, width=width, height=height)
+   grid::grid.newpage()
+   grid::grid.draw(x$gtable)
+   dev.off()
+}
+
+pht<-pheatmap(gsampleDistMatrix, #plot matrix
+         clustering_distance_rows=gsampleDists, #cluster rows
+         clustering_distance_cols=gsampleDists) #cluster columns
+```
 
 Generate a PCA of DEGs    
 ```{r}
@@ -265,13 +322,47 @@ Look at specific contrasts
 ```{r}
 resultsNames(DEG)
 #"hpf_4.hpf_vs_1.hpf"  "hpf_9.hpf_vs_1.hpf"  "hpf_14.hpf_vs_1.hpf"
-# "hpf_22.hpf_vs_1.hpf" "hpf_28.hpf_vs_1.hpf" "hpf_48.hpf_vs_1.hpf" "hpf_72.hpf_vs_1.hpf"
+# "hpf_22.hpf_vs_1.hpf" "hpf_28.hpf_vs_1.hpf" "hpf_48.hpf_vs_1.hpf" "hpf_72.hpf_vs_1.hpf"'
+
+resultsNames(boo)
 ```
 
 1 v 4 hpf 
 ```{r}
-results_1v4 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "4 hpf")))
-write.csv(results_1v4, "../output/Molecular/mRNA/mRNA_DE_results_all_1v4.csv") # Save DE results for all expressed miRNAs
+# Wald
+results_1v4_wald <- as.data.frame(results(boo, name = c("hpf_4.hpf_vs_1.hpf")))
+results_1v4_wald <- results_1v4_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 4 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v4_wald, "../output/Molecular/mRNA/mRNA_DE_results_all_1v4_wald.csv")
+
+results_1v4_wald_sig <- results_1v4_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v4_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v4_wald_sig$log2FoldChange > 0) # upregulated in 4hpf
+write.csv(results_1v4_wald_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v4_wald.csv") 
+
+ggplot(data = results_1v4_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 4 hpf")) +
+  theme_cowplot()
+
+
+# LRT
+results_1v4 <- as.data.frame(results(DEG, name = c("hpf_4.hpf_vs_1.hpf")))
+results_1v4 <- results_1v4 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 4 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v4, "../output/Molecular/mRNA/mRNA_DE_results_all_1v4.csv")
 
 # Subset by padj < 0.05
 results_1v4_sig <- results_1v4 %>%
@@ -280,15 +371,25 @@ sum(results_1v4_sig$log2FoldChange < 0) # upregulated in 1hpf
 sum(results_1v4_sig$log2FoldChange > 0) # upregulated in 4hpf
 write.csv(results_1v4_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v4.csv") 
 
-# Subset genes upregulated at 1hpf
-results_1v4_sig_1hpf_up <- results_1v4_sig %>%
-  filter(log2FoldChange < 0)
-results_1v4_sig_1hpf_up$Comparison <- "1v4hpf"
+# Make a volcano plot
+ggplot(data = results_1v4, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 4 hpf")) +
+  theme_cowplot()
 ```
 
 1 v 9 hpf 
 ```{r}
-results_1v9 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "9 hpf")))
+results_1v9 <- as.data.frame(results(DEG, name = c("hpf_9.hpf_vs_1.hpf")))
+results_1v9 <- results_1v9 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 9 hpf",
+      TRUE ~ "Not significant"))
 write.csv(results_1v9, "../output/Molecular/mRNA/mRNA_DE_results_all_1v9.csv")
 
 # Subset by padj < 0.05
@@ -298,56 +399,180 @@ sum(results_1v9_sig$log2FoldChange < 0) # upregulated in 1hpf
 sum(results_1v9_sig$log2FoldChange > 0) # upregulated in 9hpf
 write.csv(results_1v9_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v9.csv") 
 
-# Subset genes upregulated at 1hpf
-results_1v9_sig_1hpf_up <- results_1v9_sig %>%
-  filter(log2FoldChange < 0)
-results_1v9_sig_1hpf_up$Comparison <- "1v9hpf"
+# Make a volcano plot
+ggplot(data = results_1v9, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 9 hpf")) +
+  theme_cowplot()
 ```
-
-```{r}
-shared_rows <- intersect(rownames(results_1v4_sig_1hpf_up), rownames(results_1v9_sig_1hpf_up))
-shared_genes <- results_1v4_sig_1hpf_up[shared_rows, ]
-```
-
 
 1 v 14 hpf 
 ```{r}
-results_1v14 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "14 hpf")))
+results_1v14 <- as.data.frame(results(DEG, name = c("hpf_14.hpf_vs_1.hpf")))
+results_1v14 <- results_1v14 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 14 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v14, "../output/Molecular/mRNA/mRNA_DE_results_all_1v14.csv")
 
-# Save DE results for all expressed miRNAs
-#write.csv(results_1v14, "../output/Molecular/mRNA/mRNA_DE_results_all_1v14.csv")
+# Subset by padj < 0.05
+results_1v14_sig <- results_1v14 %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v14_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v14_sig$log2FoldChange > 0) # upregulated in 14hpf
+write.csv(results_1v14_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v14.csv") 
+
+# Make a volcano plot
+ggplot(data = results_1v14, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 14 hpf")) +
+  theme_cowplot()
 ```
 
 1 v 22 hpf 
 ```{r}
-results_1v22 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "22 hpf")))
+results_1v22 <- as.data.frame(results(DEG, name = c("hpf_22.hpf_vs_1.hpf")))
+results_1v22 <- results_1v22 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 22 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v22, "../output/Molecular/mRNA/mRNA_DE_results_all_1v22.csv")
 
-# Save DE results for all expressed miRNAs
-#write.csv(results_1v22, "../output/Molecular/mRNA/mRNA_DE_results_all_1v22.csv")
+# Subset by padj < 0.05
+results_1v22_sig <- results_1v22 %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v22_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v22_sig$log2FoldChange > 0) # upregulated in 22hpf
+write.csv(results_1v22_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v22.csv") 
+
+# Make a volcano plot
+ggplot(data = results_1v22, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 22 hpf")) +
+  theme_cowplot()
 ```
 
 1 v 28 hpf 
 ```{r}
-results_1v28 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "28 hpf")))
+results_1v28 <- as.data.frame(results(DEG, name = c("hpf_28.hpf_vs_1.hpf")))
+results_1v28 <- results_1v28 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 28 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v28, "../output/Molecular/mRNA/mRNA_DE_results_all_1v28.csv")
 
-# Save DE results for all expressed miRNAs
-#write.csv(results_1v28, "../output/Molecular/mRNA/mRNA_DE_results_all_1v28.csv")
+# Subset by padj < 0.05
+results_1v28_sig <- results_1v28 %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v28_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v28_sig$log2FoldChange > 0) # upregulated in 28hpf
+write.csv(results_1v28_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v28.csv") 
+
+# Make a volcano plot
+ggplot(data = results_1v28, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 28 hpf")) +
+  theme_cowplot()
 ```
 
 1 v 48 hpf 
 ```{r}
-results_1v48 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "48 hpf")))
+results_1v48 <- as.data.frame(results(DEG, name = c("hpf_48.hpf_vs_1.hpf")))
+results_1v48 <- results_1v48 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 48 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v48, "../output/Molecular/mRNA/mRNA_DE_results_all_1v48.csv")
 
-# Save DE results for all expressed miRNAs
-#write.csv(results_1v48, "../output/Molecular/mRNA/mRNA_DE_results_all_1v48.csv")
+# Subset by padj < 0.05
+results_1v48_sig <- results_1v48 %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v48_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v48_sig$log2FoldChange > 0) # upregulated in 48hpf
+write.csv(results_1v48_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v48.csv") 
+
+# Make a volcano plot
+ggplot(data = results_1v48, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 48 hpf")) +
+  theme_cowplot()
 ```
 
 1 v 72 hpf 
 ```{r}
-results_1v72 <- as.data.frame(results(DEG, contrast = c("hpf", "1 hpf", "72 hpf")))
+# Wald
+results_1v72_wald <- as.data.frame(results(boo, name = c("hpf_72.hpf_vs_1.hpf")))
+results_1v72_wald <- results_1v72_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 72 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v72_wald, "../output/Molecular/mRNA/mRNA_DE_results_all_1v72_wald.csv")
 
-# Save DE results for all expressed miRNAs
-#write.csv(results_1v72, "../output/Molecular/mRNA/mRNA_DE_results_all_1v72.csv")
+results_1v72_wald_sig <- results_1v72_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v72_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v72_wald_sig$log2FoldChange > 0) # upregulated in 72hpf
+write.csv(results_1v72_wald_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v72_wald.csv") 
+
+ggplot(data = results_1v72_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 72 hpf")) +
+  theme_cowplot()
+
+
+
+## LRT 
+results_1v72 <- as.data.frame(results(DEG, name = c("hpf_72.hpf_vs_1.hpf")))
+results_1v72 <- results_1v72 %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 72 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v72, "../output/Molecular/mRNA/mRNA_DE_results_all_1v72.csv")
+
+# Subset by padj < 0.05
+results_1v72_sig <- results_1v72 %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v72_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v72_sig$log2FoldChange > 0) # upregulated in 72hpf
+write.csv(results_1v72_sig, "../output/Molecular/mRNA/mRNA_DE_results_sig_1v72.csv") 
+
+# Make a volcano plot
+ggplot(data = results_1v72, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 72 hpf")) +
+  theme_cowplot()
 ```
-
 
