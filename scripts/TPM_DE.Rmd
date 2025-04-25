@@ -47,6 +47,7 @@ counts_length <- counts %>%
   inner_join(lengths_df, by = "gene_id")
 ```
 
+Calculate TPM
 ```{r}
 # Get gene lengths in kilobases
 length_kb <- counts_length$length / 1000
@@ -97,7 +98,7 @@ de_results_tpm <- de_results %>%
   full_join(TPM_df, by = "gene_id")
 ```
 
-Subset results from 1 and 4hpf and average across replicates
+Subset results from 1 and 4hpf and average across replicates. Plot by TPM
 ```{r}
 TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
 TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
@@ -119,7 +120,7 @@ plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
 ggplot(plot_df, aes(x = avg_1hpf, y = avg_4hpf, color = DE_status)) +
   geom_point(alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
-  scale_color_manual(values = c("DE" = "tomato", "Not DE" = "gray70")) +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
   labs(
     x = "Log2 TPM (1 hpf)",
     y = "Log2 TPM (4 hpf)",
@@ -128,10 +129,217 @@ ggplot(plot_df, aes(x = avg_1hpf, y = avg_4hpf, color = DE_status)) +
   theme(legend.position = "right")
 ```
 
+## 1 v 9 hpf TPM
 
+Read in 1v9hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v9_wald.csv")
+colnames(de_results)[1] <- "gene_id"
 
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
 
+Subset results from 1 and 9hpf and average across replicates. Plot by TPM
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
 
+TPM_9hpf <- de_results_tpm[, c("M23", "M24", "M26", "M26")]
+TPM_9hpf$avg_9hpf <- rowMeans(TPM_9hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_9hpf = TPM_9hpf$avg_9hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_9hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_9hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (9 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+## 1 v 14 hpf TPM
+
+Read in 1v14hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v14_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 14hpf and average across replicates. Plot by TPM
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_14hpf <- de_results_tpm[, c("M35", "M36", "M37", "M39")]
+TPM_14hpf$avg_14hpf <- rowMeans(TPM_14hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_14hpf = TPM_14hpf$avg_14hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_14hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_14hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (14 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+## 1 v 22 hpf TPM
+
+Read in 1v22hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v22_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 22hpf and average across replicates. Plot by TPM
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_22hpf <- de_results_tpm[, c("M47", "M48", "M51", "M52")]
+TPM_22hpf$avg_22hpf <- rowMeans(TPM_22hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_22hpf = TPM_22hpf$avg_22hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_22hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_22hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (22 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+## 1 v 28 hpf TPM
+
+Read in 1v28hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v28_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 28hpf and average across replicates. Plot by TPM
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_28hpf <- de_results_tpm[, c("M60", "M62", "M63")]
+TPM_28hpf$avg_28hpf <- rowMeans(TPM_28hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_28hpf = TPM_28hpf$avg_28hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_28hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_28hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (28 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+## 1 v 48 hpf TPM
+
+Read in 1v48hpf DE results and join with TPM df
+```{r}
+de_results <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_all_1v48_wald.csv")
+colnames(de_results)[1] <- "gene_id"
+
+de_results_tpm <- de_results %>%
+  full_join(TPM_df, by = "gene_id")
+```
+
+Subset results from 1 and 48hpf and average across replicates. Plot by TPM
+```{r}
+TPM_1hpf <- de_results_tpm[, c("gene_id", "M6", "M7", "M8")]
+TPM_1hpf$avg_1hpf <- rowMeans(TPM_1hpf[,-1])
+
+TPM_48hpf <- de_results_tpm[, c("M72", "M73", "M74", "M75")]
+TPM_48hpf$avg_48hpf <- rowMeans(TPM_48hpf)
+
+plot_df <- data.frame(
+  gene_id = TPM_1hpf$gene_id,
+  avg_1hpf = TPM_1hpf$avg_1hpf,
+  avg_48hpf = TPM_48hpf$avg_48hpf, 
+  LFC = de_results_tpm$log2FoldChange,
+  padj = de_results_tpm$padj
+)
+
+plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
+                           (plot_df$avg_1hpf > 1 | plot_df$avg_48hpf > 1), "DE", "Not DE")
+
+ggplot(plot_df, aes(x = avg_1hpf, y = avg_48hpf, color = DE_status)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
+  labs(
+    x = "Log2 TPM (1 hpf)",
+    y = "Log2 TPM (48 hpf)",
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+## 1 v 72 hpf TPM
 
 Read in 1v72hpf DE results and join with TPM df
 ```{r}
@@ -164,7 +372,7 @@ plot_df$DE_status <- ifelse(plot_df$padj < 0.05 &
 ggplot(plot_df, aes(x = avg_1hpf, y = avg_4hpf, color = DE_status)) +
   geom_point(alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray40") +
-  scale_color_manual(values = c("DE" = "tomato", "Not DE" = "gray70")) +
+  scale_color_manual(values = c("DE" = "orange", "Not DE" = "gray70")) +
   labs(
     x = "Log2 TPM (1 hpf)",
     y = "Log2 TPM (72 hpf)",
