@@ -32,6 +32,8 @@ lengths_df <- gff_transcript[, c("length", "gene_id")]
 write.csv(lengths_df, "../data/Molecular/transcript_lengths.csv", row.names = FALSE)
 ```
 
+### rRNA depleted samples 
+
 Read in filtered counts data
 ```{r}
 counts <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")

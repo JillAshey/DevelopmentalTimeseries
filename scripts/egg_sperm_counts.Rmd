@@ -1,0 +1,261 @@
+---
+title: "Egg sperm counts"
+author: "Jill Ashey"
+date: "2025-04-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(DESeq2)
+library(genefilter)
+```
+
+Read in egg/sperm data 
+```{r}
+counts <- read.csv("../data/Molecular/egg_sperm/Mcap_egg_sperm_gene_count_matrix.csv")
+colnames(counts) <- sub("\\.bam\\.gtf$", "", colnames(counts))
+rownames(counts) <- counts[,1] #set first column that contains gene names as rownames
+counts <- counts[,-1] # remove column w/ gene names 
+```
+
+### rRNA depleted samples 
+
+mRNA ribofree counts
+```{r}
+mrna_counts <- read.csv("../data/Molecular/mRNA/Mcap_gene_count_matrix.csv")
+colnames(mrna_counts) <- gsub("^X", "M", sub("_.*", "", colnames(mrna_counts)))
+rownames(mrna_counts) <- mrna_counts[,1] #set first column that contains gene names as rownames
+mrna_counts <- mrna_counts[,-1] # remove column w/ gene names 
+```
+
+Bind dfs together 
+```{r}
+counts_all <- cbind(counts, mrna_counts)
+```
+
+Remove any genes that have 0 counts across all samples (ie these genes were not expressed)
+```{r}
+dim(counts_all) 
+
+counts_all<-counts_all %>%
+     mutate(Total = rowSums(.[, 1:36]))%>%
+    filter(!Total==0)%>%
+    dplyr::select(!Total)
+
+dim(counts_all)
+```
+
+Filter data with pOverA. There are 36 samples with an n=1-4 samples per timepoint. Genes will pass filtering if they are present in 1/36=0.03 of the samples because we expect differential expression by timepoint. Also filtering for a minimum gene count of 10, such that ~3% of the samples must have a gene count of >10 in order for the gene to remain in the data set.  
+```{r}
+filt <- filterfun(pOverA(0.03,10))
+
+#create filter for the counts data
+gfilt <- genefilter(counts_all, filt)
+
+#identify genes to keep by count filter
+gkeep <- counts_all[gfilt,]
+
+#identify gene lists
+gn.keep <- rownames(gkeep)
+
+#gene count data filtered in PoverA, P percent of the samples have counts over A
+counts_all_filt <- as.data.frame(counts_all[which(rownames(counts_all) %in% gn.keep),])
+
+#How many rows do we have before and after filtering?
+nrow(counts_all) #Before
+nrow(counts_all_filt) #After
+
+# Save filtered counts matrix 
+#write.csv(counts_all_filt, file = "../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_all))
+
+# Add rows for egg and sperm samples 
+egg_sperm_meta <- data.frame(TubeID = c("SRR11452251", "SRR11452262", "SRR11452263", "SRR4048723"),
+                             Date = c(NA, NA, NA, NA),
+                             hpf = c("0 hpf (egg)", "0 hpf (egg)", "0 hpf (egg)", "0 hpf (sperm)"),
+                             Metric = c("Molecular", "Molecular", "Molecular", "Molecular"),
+                             EmbryosPerTube = c(NA, NA, NA, NA))
+
+# Bind egg sperm meta with meta_fild
+meta_filt_egg_sperm <- rbind(meta_filt, egg_sperm_meta)
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts_all_filt <- counts_all_filt[, meta_filt_egg_sperm$TubeID]
+
+# Sanity check! 
+meta_filt_egg_sperm$TubeID %in% colnames(counts_all_filt) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt_egg_sperm$TubeID) == colnames(counts_all_filt)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt_egg_sperm$hpf <- factor(meta_filt_egg_sperm$hpf, levels = c("0 hpf (egg)", "0 hpf (sperm)", "1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+```
+
+Construct DESeq data set
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts_all_filt, colData = meta_filt_egg_sperm, design = ~hpf)
+```
+
+Log transform data using VST for visualization purposes, which will deal with low count variability by calculating within-group variation (if blind=FALSE). It doesn't remove design from the data so we can see how all samples look (check if grouping by lifestage, batch effects, etc). To do this, calculate size factors of samples,which is a rough estimate of how many reads each sample contains compared to others. To use VST, size factors should be <4.
+```{r}
+SF.gdds <- estimateSizeFactors(gdds) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than 4 for us to use vst
+print(sizeFactors(SF.gdds)) #View size factors
+
+all(sizeFactors(SF.gdds)) < 4 # should return TRUE
+```
+
+All size factors are <4, so we can use vst. 
+```{r}
+gvst <- vst(gdds, blind=FALSE) #apply a variance stabilizing transformation to minimize effects of small counts and normalize wrt library size
+head(assay(gvst), 3) #view transformed gene count data for the first three genes in the dataset.  
+```
+
+Generate a PCA of all genes    
+```{r}
+pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  geom_point(size = 3) + 
+  geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed()
+```
+
+### polyA samples 
+
+mRNA polyA counts
+
+Load counts data
+```{r}
+mrna_counts <- read.csv("../data/Molecular/mRNA_polyA/Mcap_polyA_gene_count_matrix.csv")
+mrna_counts <- as.data.frame(mrna_counts)
+rownames(mrna_counts) <- mrna_counts[,1] #set first column that contains gene names as rownames
+mrna_counts <- mrna_counts[,-1] # remove column w/ gene names 
+colnames(mrna_counts) <- gsub(".bam.gtf", "", colnames(mrna_counts))
+```
+
+Bind dfs together 
+```{r}
+counts_all <- cbind(counts, mrna_counts)
+```
+
+Remove any genes that have 0 counts across all samples (ie these genes were not expressed)
+```{r}
+dim(counts_all) 
+
+counts_all<-counts_all %>%
+     mutate(Total = rowSums(.[, 1:36]))%>%
+    filter(!Total==0)%>%
+    dplyr::select(!Total)
+
+dim(counts_all)
+```
+
+Filter data with pOverA. There are 36 samples with an n=1-4 samples per timepoint. Genes will pass filtering if they are present in 1/36=0.03 of the samples because we expect differential expression by timepoint. Also filtering for a minimum gene count of 10, such that ~3% of the samples must have a gene count of >10 in order for the gene to remain in the data set.  
+```{r}
+filt <- filterfun(pOverA(0.03,10))
+
+#create filter for the counts data
+gfilt <- genefilter(counts_all, filt)
+
+#identify genes to keep by count filter
+gkeep <- counts_all[gfilt,]
+
+#identify gene lists
+gn.keep <- rownames(gkeep)
+
+#gene count data filtered in PoverA, P percent of the samples have counts over A
+counts_all_filt <- as.data.frame(counts_all[which(rownames(counts_all) %in% gn.keep),])
+
+#How many rows do we have before and after filtering?
+nrow(counts_all) #Before
+nrow(counts_all_filt) #After
+
+# Save filtered counts matrix 
+#write.csv(counts_all_filt, file = "../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_all))
+
+# Add rows for egg and sperm samples 
+egg_sperm_meta <- data.frame(TubeID = c("SRR11452251", "SRR11452262", "SRR11452263", "SRR4048723"),
+                             Date = c(NA, NA, NA, NA),
+                             hpf = c("0 hpf (egg)", "0 hpf (egg)", "0 hpf (egg)", "0 hpf (sperm)"),
+                             Metric = c("Molecular", "Molecular", "Molecular", "Molecular"),
+                             EmbryosPerTube = c(NA, NA, NA, NA))
+
+# Bind egg sperm meta with meta_fild
+meta_filt_egg_sperm <- rbind(meta_filt, egg_sperm_meta)
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts_all_filt <- counts_all_filt[, meta_filt_egg_sperm$TubeID]
+
+# Sanity check! 
+meta_filt_egg_sperm$TubeID %in% colnames(counts_all_filt) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt_egg_sperm$TubeID) == colnames(counts_all_filt)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt_egg_sperm$hpf <- factor(meta_filt_egg_sperm$hpf, levels = c("0 hpf (egg)", "0 hpf (sperm)", "1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+```
+
+Construct DESeq data set
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts_all_filt, colData = meta_filt_egg_sperm, design = ~hpf)
+```
+
+Log transform data using VST for visualization purposes, which will deal with low count variability by calculating within-group variation (if blind=FALSE). It doesn't remove design from the data so we can see how all samples look (check if grouping by lifestage, batch effects, etc). To do this, calculate size factors of samples,which is a rough estimate of how many reads each sample contains compared to others. To use VST, size factors should be <4.
+```{r}
+SF.gdds <- estimateSizeFactors(gdds) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than 4 for us to use vst
+print(sizeFactors(SF.gdds)) #View size factors
+
+all(sizeFactors(SF.gdds)) < 4 # should return TRUE
+```
+
+All size factors are <4, so we can use vst. 
+```{r}
+gvst <- vst(gdds, blind=FALSE) #apply a variance stabilizing transformation to minimize effects of small counts and normalize wrt library size
+head(assay(gvst), 3) #view transformed gene count data for the first three genes in the dataset.  
+```
+
+Generate a PCA of all genes    
+```{r}
+pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  geom_point(size = 3) + 
+  geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed()
+```
+
+

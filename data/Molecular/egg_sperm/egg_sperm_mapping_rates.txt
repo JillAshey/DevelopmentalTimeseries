@@ -1,0 +1,145 @@
+Loading uri version main
+NOTE: The modules under this branch will not run on the login node. Use
+--constraint=avx512 for sbatch or srun sessions. 
+
+The following have been reloaded with a version change:
+  1) GCC/11.3.0 => GCC/12.3.0
+  2) GCCcore/11.3.0 => GCCcore/12.3.0
+  3) XZ/.5.2.5-GCCcore-11.3.0 => XZ/.5.4.2-GCCcore-12.3.0
+  4) binutils/.2.38-GCCcore-11.3.0 => binutils/.2.40-GCCcore-12.3.0
+  5) bzip2/.1.0.8-GCCcore-11.3.0 => bzip2/.1.0.8-GCCcore-12.3.0
+  6) zlib/.1.2.12-GCCcore-11.3.0 => zlib/.1.2.13-GCCcore-12.3.0
+
+Settings:
+  Output files: "/work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/McapV3_hisat2_ref.*.ht2"
+  Line rate: 6 (line is 64 bytes)
+  Lines per side: 1 (side is 64 bytes)
+  Offset rate: 4 (one in 16)
+  FTable chars: 10
+  Strings: unpacked
+  Local offset rate: 3 (one in 8)
+  Local fTable chars: 6
+  Local sequence length: 57344
+  Local sequence overlap between two consecutive indexes: 1024
+  Endianness: little
+  Actual local endianness: little
+  Sanity checking: disabled
+  Assertions: disabled
+  Random seed: 0
+  Sizeofs: void*:8, int:4, long:8, size_t:8
+Input files DNA, FASTA:
+  /work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/Montipora_capitata_HIv3.assembly.fasta
+Reading reference sizes
+  Time reading reference sizes: 00:00:11
+Calculating joined length
+Writing header
+Reserving space for joined string
+Joining reference sequences
+  Time to join reference sequences: 00:00:04
+  Time to read SNPs and splice sites: 00:00:00
+Using parameters --bmax 146318808 --dcv 1024
+  Doing ahead-of-time memory usage test
+  Passed!  Constructing with these parameters: --bmax 146318808 --dcv 1024
+Constructing suffix-array element generator
+Converting suffix-array elements to index image
+Allocating ftab, absorbFtab
+Entering GFM loop
+Exited GFM loop
+fchr[A]: 0
+fchr[C]: 235564374
+fchr[G]: 390295807
+fchr[T]: 545052846
+fchr[$]: 780366976
+Exiting GFM::buildToDisk()
+Returning from initFromVector
+Wrote 264427794 bytes to primary GFM file: /work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/McapV3_hisat2_ref.1.ht2
+Wrote 195091752 bytes to secondary GFM file: /work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/McapV3_hisat2_ref.2.ht2
+Re-opening _in1 and _in2 as input streams
+Returning from GFM constructor
+Returning from initFromVector
+Wrote 350217981 bytes to primary GFM file: /work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/McapV3_hisat2_ref.5.ht2
+Wrote 198477018 bytes to secondary GFM file: /work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/McapV3_hisat2_ref.6.ht2
+Re-opening _in5 and _in5 as input streams
+Returning from HGFM constructor
+Headers:
+    len: 780366976
+    gbwtLen: 780366977
+    nodes: 780366977
+    sz: 195091744
+    gbwtSz: 195091745
+    lineRate: 6
+    offRate: 4
+    offMask: 0xfffffff0
+    ftabChars: 10
+    eftabLen: 0
+    eftabSz: 0
+    ftabLen: 1048577
+    ftabSz: 4194308
+    offsLen: 48772937
+    offsSz: 195091748
+    lineSz: 64
+    sideSz: 64
+    sideGbwtSz: 48
+    sideGbwtLen: 192
+    numSides: 4064412
+    numLines: 4064412
+    gbwtTotLen: 260122368
+    gbwtTotSz: 260122368
+    reverse: 0
+    linearFM: Yes
+Total time for call to driver() for forward index: 00:13:47
+19257744 reads; of these:
+  19257744 (100.00%) were paired; of these:
+    7874384 (40.89%) aligned concordantly 0 times
+    7691727 (39.94%) aligned concordantly exactly 1 time
+    3691633 (19.17%) aligned concordantly >1 times
+    ----
+    7874384 pairs aligned concordantly 0 times; of these:
+      146546 (1.86%) aligned discordantly 1 time
+    ----
+    7727838 pairs aligned 0 times concordantly or discordantly; of these:
+      15455676 mates make up the pairs; of these:
+        14657075 (94.83%) aligned 0 times
+        599112 (3.88%) aligned exactly 1 time
+        199489 (1.29%) aligned >1 times
+61.94% overall alignment rate
+[bam_sort_core] merging from 3 files and 8 in-memory blocks...
+22408812 reads; of these:
+  22408812 (100.00%) were paired; of these:
+    6983155 (31.16%) aligned concordantly 0 times
+    8980110 (40.07%) aligned concordantly exactly 1 time
+    6445547 (28.76%) aligned concordantly >1 times
+    ----
+    6983155 pairs aligned concordantly 0 times; of these:
+      226933 (3.25%) aligned discordantly 1 time
+    ----
+    6756222 pairs aligned 0 times concordantly or discordantly; of these:
+      13512444 mates make up the pairs; of these:
+        12316684 (91.15%) aligned 0 times
+        846830 (6.27%) aligned exactly 1 time
+        348930 (2.58%) aligned >1 times
+72.52% overall alignment rate
+[bam_sort_core] merging from 5 files and 8 in-memory blocks...
+21204959 reads; of these:
+  21204959 (100.00%) were paired; of these:
+    5630028 (26.55%) aligned concordantly 0 times
+    10575974 (49.88%) aligned concordantly exactly 1 time
+    4998957 (23.57%) aligned concordantly >1 times
+    ----
+    5630028 pairs aligned concordantly 0 times; of these:
+      188403 (3.35%) aligned discordantly 1 time
+    ----
+    5441625 pairs aligned 0 times concordantly or discordantly; of these:
+      10883250 mates make up the pairs; of these:
+        9800975 (90.06%) aligned 0 times
+        819802 (7.53%) aligned exactly 1 time
+        262473 (2.41%) aligned >1 times
+76.89% overall alignment rate
+[bam_sort_core] merging from 4 files and 8 in-memory blocks...
+17901354 reads; of these:
+  17901354 (100.00%) were unpaired; of these:
+    3546701 (19.81%) aligned 0 times
+    12504646 (69.85%) aligned exactly 1 time
+    1850007 (10.33%) aligned >1 times
+80.19% overall alignment rate
+[bam_sort_core] merging from 1 files and 8 in-memory blocks...

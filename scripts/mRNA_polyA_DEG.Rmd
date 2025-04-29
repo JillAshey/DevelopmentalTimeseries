@@ -1,0 +1,573 @@
+---
+title: "mRNA polyA differential expression"
+author: "Jill Ashey"
+date: "2025-04-29"
+output: html_document
+---
+
+This script provides details on mRNA polyA differential expression across time point in Mcap development.  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# The following setting is important, do not omit.
+options(stringsAsFactors = FALSE) #Set Strings to character
+```
+
+Load packages 
+```{r}
+library(genefilter)
+library(DESeq2)
+library(pheatmap)
+library(lme4)
+library(tidyverse)
+library(car)
+library(gplots)
+library(wesanderson)
+library(cowplot)
+library(gridExtra)
+library(grid)
+library("factoextra")
+library(vegan)
+library(ggcorrplot)
+```
+
+Load counts data
+```{r}
+counts <- read.csv("../data/Molecular/mRNA_polyA/Mcap_polyA_gene_count_matrix.csv")
+counts <- as.data.frame(counts)
+rownames(counts) <- counts[,1] #set first column that contains gene names as rownames
+counts <- counts[,-1] # remove column w/ gene names 
+```
+
+We have 32 columns as expected. Remove extra info from the column names 
+```{r}
+colnames(counts) <- gsub(".bam.gtf", "", colnames(counts))
+```
+
+Remove any genes that have 0 counts across all samples (ie these genes were not expressed)
+```{r}
+dim(counts) 
+
+counts<-counts %>%
+     mutate(Total = rowSums(.[, 1:32]))%>%
+    filter(!Total==0)%>%
+    dplyr::select(!Total)
+
+dim(counts)
+```
+
+Started with 54384 genes, the total number in the annotation. After removing genes with 0s across all samples, 27366 genes are left. 
+
+Filter data with pOverA. There are 32 samples with an n=4 samples per timepoint. Genes will pass filtering if they are present in 4/32=0.125 of the samples because we expect differential expression by timepoint. Also filtering for a minimum gene count of 10, such that ~12% of the samples must have a gene count of >10 in order for the gene to remain in the data set.  
+```{r}
+filt <- filterfun(pOverA(0.12,10))
+
+#create filter for the counts data
+gfilt <- genefilter(counts, filt)
+
+#identify genes to keep by count filter
+gkeep <- counts[gfilt,]
+
+#identify gene lists
+gn.keep <- rownames(gkeep)
+
+#gene count data filtered in PoverA, P percent of the samples have counts over A
+counts_filt <- as.data.frame(counts[which(rownames(counts) %in% gn.keep),])
+
+#How many rows do we have before and after filtering?
+nrow(counts) #Before
+nrow(counts_filt) #After
+
+# Save filtered counts matrix 
+write.csv(counts_filt, file = "../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
+```
+
+Before filtering, there were 27366 genes; after filtering, there were 9663 genes. 
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts_filt))
+```
+
+Remove M14 and M61 - these are outliers (based on PCA below)
+```{r}
+counts_filt <- counts_filt[, !(colnames(counts_filt) %in% c("M61"))]
+meta_filt <- meta_filt[!(meta_filt$TubeID %in% c("M61")), ]
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts_filt <- counts_filt[, meta_filt$TubeID]
+
+# Sanity check! 
+meta_filt$TubeID %in% colnames(counts_filt) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt$TubeID) == colnames(counts_filt)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt$hpf <- factor(meta_filt$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+```
+
+Construct DESeq data set
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts_filt, colData = meta_filt, design = ~hpf)
+```
+
+Log transform data using VST for visualization purposes, which will deal with low count variability by calculating within-group variation (if blind=FALSE). It doesn't remove design from the data so we can see how all samples look (check if grouping by lifestage, batch effects, etc). To do this, calculate size factors of samples,which is a rough estimate of how many reads each sample contains compared to others. To use VST, size factors should be <4.
+```{r}
+SF.gdds <- estimateSizeFactors(gdds) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than 4 for us to use vst
+print(sizeFactors(SF.gdds)) #View size factors
+
+all(sizeFactors(SF.gdds)) < 4 # should return TRUE
+```
+
+All size factors are <4, so we can use vst. 
+```{r}
+gvst <- vst(gdds, blind=FALSE) #apply a variance stabilizing transformation to minimize effects of small counts and normalize wrt library size
+head(assay(gvst), 3) #view transformed gene count data for the first three genes in the dataset.  
+```
+
+Plot a heatmap to sample to sample distances  
+```{r}
+gsampleDists <- dist(t(assay(gvst))) #calculate distance matix
+gsampleDistMatrix <- as.matrix(gsampleDists) #distance matrix
+rownames(gsampleDistMatrix) <- colnames(gvst) #assign row names
+colnames(gsampleDistMatrix) <- NULL #assign col names
+#colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255) #assign colors
+
+save_pheatmap_pdf <- function(x, filename, width=7, height=7) {
+   stopifnot(!missing(x))
+   stopifnot(!missing(filename))
+   pdf(filename, width=width, height=height)
+   grid::grid.newpage()
+   grid::grid.draw(x$gtable)
+   dev.off()
+}
+
+pht<-pheatmap(gsampleDistMatrix, #plot matrix
+         clustering_distance_rows=gsampleDists, #cluster rows
+         clustering_distance_cols=gsampleDists) #cluster columns
+```
+
+Generate a PCA of all genes    
+```{r}
+pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  geom_point(size = 3) + 
+  geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed()
+```
+
+PCA separates beautifully!! There are a couple of outliers -- M61 from 28 hpf and M72 from 48 hpf. Will need to remove these before proceeding. 
+
+Generate a publication style PCA  
+```{r}
+pcaData <- plotPCA(gvst, intgroup = c("hpf"), returnData = TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color = hpf, label = name)) + 
+  #geom_point(size = 3) + 
+  #geom_jitter(size = 4, width = 1.5, height = 1.5, stroke = 1) +
+  geom_jitter(aes(fill = hpf), size = 5, width = 1.5, height = 1.5, shape = 21, color = "black", stroke = 0.5) +
+  #geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  scale_color_discrete() +
+  coord_fixed() +
+  theme_linedraw() +
+  theme(legend.text = element_text(size = 13),
+        plot.background = element_blank(),
+        legend.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 15, face = "bold"),
+        #axis.title.y = element_text(vjust = -1.5),
+        plot.title = element_text(size = 20, face = "italic", hjust = 0.5))
+
+# Save 
+ggsave("../output/Molecular/mRNA_polyA/PCA_all_genes_polyA.pdf", plot = last_plot())
+ggsave("../output/Molecular/mRNA_polyA/PCA_all_genes_polyA.png", plot = last_plot())
+```
+
+Plot gene count for specific genes of interest (or all genes) over time (vst transformed counts)
+```{r}
+# Transform counts
+vst_counts <- vst(gdds, blind = TRUE)
+vst_mat <- assay(vst_counts)
+
+# Pivot to long
+vst_long <- vst_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "TubeID", values_to = "vst_count")
+
+# Join with metadata
+vst_long <- vst_long %>%
+  left_join(meta_filt, by = "TubeID")
+
+# Plot
+gene_of_interest <- "Montipora_capitata_HIv3___RNAseq.g41714.t1"
+plot_summary <- vst_long %>%
+  filter(gene == gene_of_interest) %>%
+  group_by(hpf) %>%
+  summarize(
+    mean_vst = mean(vst_count, na.rm = TRUE),
+    se_vst = sd(vst_count, na.rm = TRUE) / sqrt(n())) %>%
+  mutate(hpf = factor(hpf, levels = unique(meta_filt$hpf)))  # consistent ordering
+ggplot(plot_summary, aes(x = hpf, y = mean_vst, group = 1)) +
+  geom_point(size = 3, color = "darkblue") +
+  geom_line(color = "darkblue", linewidth = 0.5) +
+  geom_errorbar(aes(ymin = mean_vst - se_vst, ymax = mean_vst + se_vst), width = 0.2, color = "darkblue") +
+  labs(x = "Hours Post Fertilization (hpf)",
+    y = "Mean VST Normalized Count ± SE"
+  ) +
+  theme_minimal()
+```
+
+Run test using the LRT to look for effect of lifestage as a whole across our experiment. There is only one main effect, so the reduced model is just the intercept. We are using LRT per recommendations from the DESeq2 [manual](https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html), which states about time-series experiments: "There are a number of ways to analyze time-series experiments, depending on the biological question of interest. In order to test for any differences over multiple time points, once can use a design including the time factor, and then test using the likelihood ratio test as described in the following section, where the time factor is removed in the reduced formula."
+
+I initially ran DESeq2 with LRT but the results (number of DEGs and volcano/MA plots) didn't look correct. Now, I am running it with Wald!
+```{r, message = FALSE}
+DEG <- DESeq(gdds)
+```
+
+Save all DE results, regardless of significance 
+```{r}
+DEG_results_all<-as.data.frame(results(DEG))
+DEG_results_all$gene <- rownames(DEG_results_all)
+rownames(DEG_results_all) <- NULL
+dim(DEG_results_all)
+
+# Save as csv 
+write.csv(DEG_results_all, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_wald_polyA.csv")
+#DEG_results_all <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_all_wald_polyA.csv")
+```
+
+Filter by adjusted p value <0.05.
+```{r}
+DEG_results <- subset(DEG_results_all, padj<0.05)
+dim(DEG_results)
+
+# Save as csv 
+write.csv(DEG_results, "../output/Molecular/mRNA_polyA/mRNA_DE_results_wald_polyA.csv")
+```
+
+Conduct VST transformation for visualization.  
+```{r}
+DEG_results_vst <- gdds[unique(DEG_results$gene)]
+dim(DEG_results_vst)
+
+DEG_results_vst <- varianceStabilizingTransformation(DEG_results_vst) 
+```
+
+Plot a heatmap to sample to sample distances  
+```{r}
+gsampleDists <- dist(t(assay(DEG_results_vst))) #calculate distance matix
+gsampleDistMatrix <- as.matrix(gsampleDists) #distance matrix
+rownames(gsampleDistMatrix) <- colnames(DEG_results_vst) #assign row names
+colnames(gsampleDistMatrix) <- NULL #assign col names
+#colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255) #assign colors
+
+save_pheatmap_pdf <- function(x, filename, width=7, height=7) {
+   stopifnot(!missing(x))
+   stopifnot(!missing(filename))
+   pdf(filename, width=width, height=height)
+   grid::grid.newpage()
+   grid::grid.draw(x$gtable)
+   dev.off()
+}
+
+pht<-pheatmap(gsampleDistMatrix, #plot matrix
+         clustering_distance_rows=gsampleDists, #cluster rows
+         clustering_distance_cols=gsampleDists) #cluster columns
+```
+
+Generate a PCA of DEGs    
+```{r}
+pcaData_DEG <- plotPCA(DEG_results_vst, intgroup = c("hpf"), returnData = TRUE)
+
+percentVar_DEG <- round(100 * attr(pcaData_DEG, "percentVar"))
+ggplot(pcaData_DEG, aes(PC1, PC2, color = hpf, label = name)) + 
+  #geom_point(size = 3) + 
+  #geom_jitter(size = 4, width = 1.5, height = 1.5, stroke = 1) +
+  geom_jitter(aes(fill = hpf), size = 5, width = 1.5, height = 1.5, shape = 21, color = "black", stroke = 0.5) +
+  #geom_text(vjust = 1.5, hjust = 1.5) + # This adds the labels
+  xlab(paste0("PC1: ", percentVar_DEG[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar_DEG[2], "% variance")) +
+  scale_color_discrete() +
+  coord_fixed() +
+  theme_linedraw() +
+  theme(legend.text = element_text(size = 13),
+        plot.background = element_blank(),
+        legend.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 13),
+        axis.title = element_text(size = 15, face = "bold"),
+        #axis.title.y = element_text(vjust = -1.5),
+        plot.title = element_text(size = 20, face = "italic", hjust = 0.5))
+```
+
+Look at specific contrasts 
+```{r}
+resultsNames(DEG)
+#"hpf_4.hpf_vs_1.hpf"  "hpf_9.hpf_vs_1.hpf"  "hpf_14.hpf_vs_1.hpf"
+# "hpf_22.hpf_vs_1.hpf" "hpf_28.hpf_vs_1.hpf" "hpf_48.hpf_vs_1.hpf" "hpf_72.hpf_vs_1.hpf"'
+```
+
+1 v 4 hpf 
+```{r}
+# Wald
+results_1v4_wald <- as.data.frame(results(DEG, name = c("hpf_4.hpf_vs_1.hpf")))
+results_1v4_wald <- results_1v4_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 4 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v4_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v4_wald_polyA.csv")
+
+results_1v4_wald_sig <- results_1v4_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v4_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v4_wald_sig$log2FoldChange > 0) # upregulated in 4hpf
+write.csv(results_1v4_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v4_wald_polyA.csv") 
+
+ggplot(data = results_1v4_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 4 hpf")) +
+  theme_cowplot()
+```
+
+1 v 9 hpf 
+```{r}
+# Wald
+results_1v9_wald <- as.data.frame(results(DEG, name = c("hpf_9.hpf_vs_1.hpf")))
+results_1v9_wald <- results_1v9_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 9 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v9_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v9_wald_polyA.csv")
+
+results_1v9_wald_sig <- results_1v9_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v9_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v9_wald_sig$log2FoldChange > 0) # upregulated in 9hpf
+write.csv(results_1v9_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v9_wald_polyA.csv") 
+
+ggplot(data = results_1v9_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 9 hpf")) +
+  theme_cowplot()
+```
+
+1 v 14 hpf 
+```{r}
+# Wald
+results_1v14_wald <- as.data.frame(results(DEG, name = c("hpf_14.hpf_vs_1.hpf")))
+results_1v14_wald <- results_1v14_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 14 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v14_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v14_wald_polyA.csv")
+
+results_1v14_wald_sig <- results_1v14_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v14_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v14_wald_sig$log2FoldChange > 0) # upregulated in 14hpf
+write.csv(results_1v14_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v14_wald_polyA.csv") 
+
+ggplot(data = results_1v14_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 14 hpf")) +
+  theme_cowplot()
+```
+
+1 v 22 hpf 
+```{r}
+# Wald
+results_1v22_wald <- as.data.frame(results(DEG, name = c("hpf_22.hpf_vs_1.hpf")))
+results_1v22_wald <- results_1v22_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 22 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v22_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v22_wald_polyA.csv")
+
+results_1v22_wald_sig <- results_1v22_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v22_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v22_wald_sig$log2FoldChange > 0) # upregulated in 22hpf
+write.csv(results_1v22_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v22_wald_polyA.csv") 
+
+ggplot(data = results_1v22_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 22 hpf")) +
+  theme_cowplot()
+```
+
+1 v 28 hpf 
+```{r}
+# Wald
+results_1v28_wald <- as.data.frame(results(DEG, name = c("hpf_28.hpf_vs_1.hpf")))
+results_1v28_wald <- results_1v28_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 28 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v28_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v28_wald_polyA.csv")
+
+results_1v28_wald_sig <- results_1v28_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v28_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v28_wald_sig$log2FoldChange > 0) # upregulated in 28hpf
+write.csv(results_1v28_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v28_wald_polyA.csv") 
+
+ggplot(data = results_1v28_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 28 hpf")) +
+  theme_cowplot()
+```
+
+1 v 48 hpf 
+```{r}
+# Wald
+results_1v48_wald <- as.data.frame(results(DEG, name = c("hpf_48.hpf_vs_1.hpf")))
+results_1v48_wald <- results_1v48_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 48 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v48_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v48_wald_polyA.csv")
+
+results_1v48_wald_sig <- results_1v48_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v48_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v48_wald_sig$log2FoldChange > 0) # upregulated in 48hpf
+write.csv(results_1v48_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v48_wald_polyA.csv") 
+
+ggplot(data = results_1v48_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 48 hpf")) +
+  theme_cowplot()
+```
+
+1 v 72 hpf 
+```{r}
+# Wald
+results_1v72_wald <- as.data.frame(results(DEG, name = c("hpf_72.hpf_vs_1.hpf")))
+results_1v72_wald <- results_1v72_wald %>%
+  mutate(
+    regulation = case_when(
+      padj < 0.05 & log2FoldChange < -1 ~ "Up at 1 hpf",
+      padj < 0.05 & log2FoldChange > 1 ~ "Up at 72 hpf",
+      TRUE ~ "Not significant"))
+write.csv(results_1v72_wald, "../output/Molecular/mRNA_polyA/mRNA_DE_results_all_1v72_wald_polyA.csv")
+
+results_1v72_wald_sig <- results_1v72_wald %>%
+  filter(padj < 0.05 & abs(log2FoldChange) >= 1)
+sum(results_1v72_wald_sig$log2FoldChange < 0) # upregulated in 1hpf
+sum(results_1v72_wald_sig$log2FoldChange > 0) # upregulated in 72hpf
+write.csv(results_1v72_wald_sig, "../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v72_wald_polyA.csv") 
+
+ggplot(data = results_1v72_wald, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+  geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+  geom_point() +
+  scale_color_manual(values = c("grey", "#00AFBB", "purple"),
+                     labels = c("Not significant", "Upregulated at 1 hpf", "Upregulated at 72 hpf")) +
+  theme_cowplot()
+```
+
+Get DESeq2 comparisons across time point
+```{r}
+timepoints <- c(4, 9, 14, 22, 28, 48, 72) # hpf timepoints
+result_list <- list()
+
+for (tp in timepoints) {
+  res <- results(DEG, name = paste0("hpf_", tp, ".hpf_vs_1.hpf"))
+  res_df <- as.data.frame(res)
+  res_df$gene <- rownames(res_df)
+  res_df$timepoint <- tp
+  result_list[[as.character(tp)]] <- res_df
+}
+
+# Combine into one dataframe
+all_results <- bind_rows(result_list)
+```
+
+Find earliest time point with >2 LFC 
+```{r}
+# Filter for genes with >2-fold decrease (log2FC < -1)
+downregulated <- all_results %>%
+  filter(log2FoldChange < -1)
+
+# For each gene, find the earliest timepoint
+clearance_time_rRNA <- downregulated %>%
+  group_by(gene) %>%
+  summarize(clearance_time_rRNA = min(timepoint))
+```
+
+Plot 
+```{r}
+# Count how many genes per clearance time
+clearance_counts_rRNA <- clearance_time_rRNA %>%
+  group_by(clearance_time_rRNA) %>%
+  summarise(n_genes = n()) %>%
+  ungroup()
+
+# Bar plot
+ggplot(clearance_counts_rRNA, aes(x = factor(clearance_time_rRNA), y = n_genes)) +
+  geom_col(fill = "steelblue") +
+  theme_minimal() +
+  labs(
+    x = "Clearance Time (hpf, polyA)",
+    y = "Number of genes") +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  )
+
+# Dot plot
+ggplot(clearance_counts_rRNA, aes(x = clearance_time_rRNA, y = n_genes)) +
+  geom_point(size = 5, color = "dodgerblue") +
+  geom_line(group = 1, color = "dodgerblue") +
+  theme_minimal() +
+  labs(
+    x = "Clearance Time (hpf, polyA)",
+    y = "Number of genes"
+  )
+```
