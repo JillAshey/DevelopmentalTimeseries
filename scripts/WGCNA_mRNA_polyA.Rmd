@@ -1,0 +1,754 @@
+---
+title: "WGCNA mRNA polyA"
+author: "Jill Ashey"
+date: "2025-04-29"
+output: html_document
+---
+
+WGCNA for Mcap 2023 developmental timeseries mRNA data. Using code from [Erin Chille](https://github.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/blob/master/2a-WGCNA/Developmental_WGCNA.Rmd) and [Zoe Dellaert](https://github.com/imkristenbrown/Heron-Pdam-gene-expression/blob/master/BioInf/scripts/WGCNA/WGCNA.Rmd).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# The following setting is important, do not omit.
+options(stringsAsFactors = FALSE) #Set Strings to character
+```
+
+Import necessary libraries
+```{r, message=FALSE, warning=FALSE}
+# install.packages("BiocManager")
+# library("BiocManager")
+# BiocManager::install("impute", type = "source")
+# BiocManager::install("WGCNA",force = TRUE)
+# BiocManager::install("vsn")
+# install.packages("dendextend")
+
+library(dplyr)
+library(tidyr)
+library(Rmisc)
+library(lubridate)
+library(reshape2)
+library(ggplot2)
+library(car)
+library(MASS)
+library(mgcv)
+#library(MuMIn)
+library(emmeans)
+#library(locfit)
+library(DESeq2)
+library(impute)
+library(WGCNA)
+library(xfun)
+library(genefilter)
+library(vsn)
+library(RColorBrewer)
+library(pheatmap)
+library(dendextend)
+library(ComplexHeatmap)
+#sessionInfo()
+```
+
+Load filtered counts
+```{r}
+#counts <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
+```
+
+Load unfiltered counts data
+```{r}
+counts <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
+counts <- as.data.frame(counts)
+rownames(counts) <- counts[,1] #set first column that contains gene names as rownames
+counts <- counts[,-1] # remove column w/ gene names 
+```
+
+We have 32 columns as expected. Remove extra info from the column names 
+```{r}
+colnames(counts) <- gsub(".bam.gtf", "", colnames(counts))
+```
+
+Remove any genes that have 0 counts across all samples (ie these genes were not expressed)
+```{r}
+# dim(counts) 
+# 
+# counts<-counts %>%
+#      mutate(Total = rowSums(.[, 1:32]))%>%
+#     filter(!Total==0)%>%
+#     dplyr::select(!Total)
+# 
+# dim(counts)
+```
+
+Read in metadata 
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  dplyr::filter(Metric == "Molecular")
+
+meta$hpf <- gsub(" ", "_", meta$hpf)
+meta$hpf <- paste0("hpf_", sub("_hpf", "", meta$hpf))
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(counts))
+```
+
+Remove M61 - these are outliers (based on PCA)
+```{r}
+counts <- counts[, !(colnames(counts) %in% c("M61"))]
+meta_filt <- meta_filt[!(meta_filt$TubeID %in% c("M61")), ]
+```
+
+Reorder columns in filtered counts matrix so that it matches the metadata
+```{r}
+counts <- counts[, meta_filt$TubeID]
+
+# Sanity check! 
+meta_filt$TubeID %in% colnames(counts) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt$TubeID) == colnames(counts)) #are they the same in the same order? Should be TRUE
+```
+
+Set levels of factors 
+```{r}
+meta_filt$hpf <- factor(meta_filt$hpf, levels = c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72"))
+```
+
+Construct DESeq data set
+```{r}
+gdds <- DESeqDataSetFromMatrix(countData = counts, colData = meta_filt, design = ~hpf)
+```
+
+First we are going to log-transform the data using a variance stabilizing transforamtion (VST). This is only for visualization purposes. Essentially, this is roughly similar to putting the data on the log2 scale. It will deal with the sampling variability of low counts by calculating within-group variability (if blind=FALSE). Importantly, it does not use the design to remove variation in the data, and so can be used to examine if there may be any variability do to technical factors such as extraction batch effects.
+
+To do this we first need to calculate the size factors of our samples. This is a rough estimate of how many reads each sample contains compared to the others. In order to use VST (the faster log2 transforming process) to log-transform our data, the size factors need to be less than 4. Otherwise, there could be artefacts in our results.
+```{r}
+SF.gdds <- estimateSizeFactors(gdds) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than for to use vst
+print(sizeFactors(SF.gdds)) #View size factors
+```
+
+Size factors are all less than 4, so we can use VST!
+```{r}
+gvst <- vst(gdds, blind=FALSE) #apply a variance stabilizing transforamtion to minimize effects of small counts and normalize wrt library size
+head(assay(gvst), 3) #view transformed gene count data
+```
+
+Plot a heatmap of sample-to-sample distances
+```{r}
+gsampleDists <- dist(t(assay(gvst))) #calculate distance matix
+gsampleDistMatrix <- as.matrix(gsampleDists) #distance matrix
+rownames(gsampleDistMatrix) <- colnames(gvst) #assign row names
+colnames(gsampleDistMatrix) <- NULL #assign col names
+pheatmap(gsampleDistMatrix, #plot matrix
+         clustering_distance_rows=gsampleDists, #cluster rows
+         clustering_distance_cols=gsampleDists) #cluster columns
+```
+
+Compile WGCNA dataset 
+
+Transpose the filtered gene count matrix so that the gene IDs are rows and the sample IDs are columns.
+```{r}
+datExpr <- as.data.frame(t(assay(gvst))) #transpose to output to a new data frame with the column names as row names. And make all data numeric
+```
+
+Look for outliers by examining sample clusters
+```{r}
+sampleTree = hclust(dist(datExpr), method = "average");
+# Plot the sample tree: Open a graphic output window of size 12 by 9 inches
+# The user should change the dimensions if the window is too large or too small.
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+```
+
+Network construction and consensus module detection
+
+First choose a soft-threshold power. The soft thresholding power (β) is the number to which the co-expression similarity is raised to calculate adjacency. The function pickSoftThreshold performs a network topology analysis. The user chooses a set of candidate powers, however the default parameters are suitable values.
+```{r, message=FALSE, warning=FALSE}
+##Soft threshold
+dim(datExpr) #  31 9663
+# Choose a set of soft-thresholding powers
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+#powers = c(1:20, seq(22, 30, by=2))
+#powers = c(1:30)  # Test up to power=30
+# Call the network topology analysis function
+
+#the below takes a long time to run, so is commented out and the pre-run results are loaded in below. I need to save it to my desktop because it is too large to push to github. Instead, it will go on OSF
+sft <- pickSoftThreshold(datExpr, powerVector = powers, verbose = 5) #...wait for this to finish
+save(sft, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/sft_polyA.RData")
+load("~/Desktop/PutnamLab/DevelopmentalTimeseries/sft_polyA.RData")
+
+# pickSoftThreshold 
+#  performs the analysis of network topology and aids the
+# user in choosing a proper soft-thresholding power.
+# The user chooses a set of candidate powers (the function provides suitable default values)
+# function returns a set of network indices that should be inspected
+
+sizeGrWindow(9, 5) # set window size 
+# png to output 
+png("../output/Molecular/mRNA_polyA/WGCNA/sft_polyA.png", 1000, 1000, pointsize=20)
+par(mfrow = c(1,2));
+cex1 = 0.8;
+# # Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+    main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+    labels=powers,cex=cex1,col="red");
+# # this line corresponds to using an R^2 cut-off
+abline(h=0.8,col="red")
+# # Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+    xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+    main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+dev.off() # output 
+#I used a scale-free topology fit index **R^2 of 0.85**. This lowest recommended R^2 by Langfelder and Horvath is 0.8. I chose 0.85 because we want to use the smallest soft thresholding power that maximizes with model fit. It appears that our **soft thresholding power is 14** because it is the loweest power before the R^2=0.8 threshold that maximizes with model fit.
+
+```
+
+## Step wise module construction 
+
+#### Step 1: Create adjacency matrix 
+
+```{r}
+softPower = 14 # set the soft threshold based on the plots above 
+
+# signed 
+#to get this to work with a ton of genes >30K, I had to increase my memory limit using: memory.limit(size = 35000) 
+adjacency_sign = adjacency(datExpr, power = softPower, type="signed")  #Calculate adjacency
+```
+
+###  Step 2: Turn adjacency into topological overlap: Calculation of the topological overlap matrix, (TOM) and the corresponding dissimilarity, from a given adjacency matrix.
+
+```{r}
+#the below takes a long time to run, so is commented out and the pre-run results are loaded in below
+TOM_sign = TOMsimilarity(adjacency_sign, TOMType="signed") #Translate adjacency into topological overlap matrix
+save(TOM_sign, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/TOM_sign_polyA.Rdata")
+load("~/Desktop/PutnamLab/DevelopmentalTimeseries/TOM_sign_polyA.Rdata")
+
+dissTOM_sign   = 1-TOM_sign
+```
+
+###  Step 3: Call the hierarchical clustering function - plot the tree
+
+```{r}
+# Call the hierarchical clustering function
+#to get this to work, I had to increase my memory limit using: memory.limit(size = 45000) 
+geneTree_sign   = hclust(as.dist(dissTOM_sign), method = "average");
+
+# Plot the resulting clustering tree (dendrogram) Each leaf corresponds to a gene, branches grouping together densely are interconnected, highly co-expressed genes.  
+sizeGrWindow(12,9)
+
+plot(geneTree_sign, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity - SIGNED",
+     labels = FALSE, hang = 0.04)
+```
+
+###  Step 4: Set module size and 'cutreeDynamic' to create clusters 
+
+```{r}
+#Module identification is essentially cutting the branches off the tree in the dendrogram above. We like large modules, so we set the **minimum module size** relatively high, so we will set the minimum size at 30. 
+minModuleSize = 30; # set this for the subseqent call...
+
+dynamicMods_sign = cutreeDynamic(dendro = geneTree_sign, distM = dissTOM_sign,
+                            deepSplit = 1, pamRespectsDendro = FALSE,
+                            minClusterSize = minModuleSize);
+table(dynamicMods_sign) # number of genes per module. Module 0 is reserved for unassigned genes. The are other modules will be listed largest to smallest. 
+```
+
+###  Step 5: convert numeric network to colors and plot the dendrogram
+
+```{r} 
+# Convert numeric lables into colors
+dynamicColors_sign = labels2colors(dynamicMods_sign) # add colors to module labels (previously numbers)
+table(dynamicColors_sign) # lets look at this table...
+# Plot the dendrogram and colors underneath
+
+plotDendroAndColors(geneTree_sign, dynamicColors_sign, "Dynamic Tree Cut - SIGNED",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors 'SIGNED'")
+
+sizeGrWindow(8,6)
+png("../output/Molecular/mRNA_polyA/WGCNA/GeneDendrogram_polyA.png", 1000, 1000, pointsize=20)
+plotDendroAndColors(geneTree_sign, dynamicColors_sign, "Dynamic Tree Cut - SIGNED",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors 'SIGNED'")
+dev.off()
+```
+
+###  Step 6: Calculate Eigengenes - view thier connectivity based on 'MEDiss = 1-cor(MEs)'
+
+```{r}
+# Calculate eigengenes
+MEList = moduleEigengenes(datExpr, colors = dynamicColors_sign, softPower = 14)
+
+MEs = MEList$eigengenes
+MEs
+
+library(dplyr)
+MEs <- MEs %>% 
+    select_if(~ !any(is.na(.)))
+
+# Calculate dissimilarity of module eigengenes
+MEDiss = 1-cor(MEs, use = "pairwise.complete.obs");
+
+# Cluster module eigengenes
+METree = hclust(as.dist(MEDiss), method = "average");
+# Plot the result
+sizeGrWindow(7, 6)
+png("../output/Molecular/mRNA_polyA/WGCNA/ClusterEigengenes_polyA.png", 1000, 1000, pointsize=20)
+plot(METree, main = "Clustering of module eigengenes - SIGNED (dissimilarity calc = MEDiss = 1-cor(MEs))",
+     xlab = "", sub = "")
+MEDissThres = 0.15 
+abline(h=MEDissThres, col = "red")
+dev.off()
+```
+
+###  Step 7: Specify the cut line for the dendrogram (module) - Calc MODULE EIGENGENES (mergeMEs)
+#### We had 30 modules before merging, and 18 modules after merging
+
+```{r}
+MEDissThres = 0.15 # **Merge modules with >85% eigengene similarity.** Most studies use somewhere between 80-90% similarity. I will use 85% similarity as my merging threshold.
+# Plot the cut line into the dendrogram
+#abline(h=MEDissThres, col = "red")
+# Call an automatic merging function
+# merge = mergeCloseModules(dds.d0_vst, dynamicColors, cutHeight = MEDissThres, verbose = 3)
+merge = mergeCloseModules(datExpr, dynamicColors_sign, cutHeight = MEDissThres, verbose = 3)
+# The merged module colors
+mergedColors = merge$colors;
+# Eigengenes of the new merged modules:
+mergedMEs = merge$newMEs;
+library(dplyr)
+mergedMEs <- mergedMEs %>% 
+    select_if(~ !any(is.na(.)))
+# Cluster module eigengenes
+MEDiss2 = 1-cor(mergedMEs,use = 'pairwise.complete.obs');
+MEDiss2
+METree2 = hclust(as.dist(MEDiss2), method = "average");
+# Plot the result
+plot(METree2, main = "Clustering of module eigengenes - SIGNED (dissimilarity calc = MEDiss = 1-cor(MEs))",
+     xlab = "", sub = "")
+
+
+sizeGrWindow(7, 6)
+png("../output/Molecular/mRNA_polyA/WGCNA/ClusterEigengenes_merged_polyA.png", 1000, 1000, pointsize=20)
+plot(METree2, main = "Clustering of module eigengenes - SIGNED (dissimilarity calc = MEDiss = 1-cor(MEs))",
+     xlab = "", sub = "")
+dev.off()
+```
+
+###  Step 8: Plot dendrogram with the cut line 'MEDissThres' 
+
+```{r}
+plotDendroAndColors(geneTree_sign, cbind(dynamicColors_sign, mergedColors),
+                    c("Dynamic Tree Cut", "Merged dynamic"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+sizeGrWindow(12, 9)
+
+png("../output/Molecular/mRNA_polyA/WGCNA/ClusterDendrogram_signed_polyA.png", 1000, 1000, pointsize=20)
+plotDendroAndColors(geneTree_sign, cbind(dynamicColors_sign, mergedColors),
+                    c("Dynamic Tree Cut", "Merged dynamic"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+dev.off()
+```
+
+###  Step 9: Commit to mergedcolors as 'MEs' and 'moduleColors'
+```{r}
+# Rename to moduleColors
+moduleColors = mergedColors
+# Construct numerical labels corresponding to the colors
+colorOrder = c("grey", standardColors(50));
+moduleLabels = match(moduleColors, colorOrder)-1;
+MEs = mergedMEs;
+# Save module colors and labels for use in subsequent parts
+save(MEs, moduleLabels, moduleColors, geneTree_sign, file = "~/Desktop/PutnamLab/DevelopmentalTimeseries/networkConstruction-stepByStep_polyA.RData")
+# write csv - save the module eigengenes
+write.csv(MEs, file = "../output/Molecular/mRNA_polyA/WGCNA/WGCNA_ModuleEigengenes_polyA.csv")
+table(mergedColors)
+```
+
+## Prepare for  module trait associations - Eigengene calc - trait data as factors
+```{r}
+#Prepare trait data. Data has to be numeric, so I will substitute hpf for numeric values. The "trait" we are considering here is hpf. Make a dataframe that has a column for each hpf and a row for samples. Populate a 1 for samples that match a specific hpf and a 0 for samples not matching. This process changes hpf from a categorical variable into a binary variable. This will allow for correlations between mean eigengenes and habitat of origin.  
+allTraits <- names(meta_filt$hpf)
+allTraits$hpf_1 <- c(1, 1, 1, 1, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_4 <- c(0, 0, 0, 0, # 1hpf
+                    1, 1, 1, 1, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_9 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    1, 1, 1, 1, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_14 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    1, 1, 1, 1, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_22 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    1, 1, 1, 1, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_28 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    1, 1, 1, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_48 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    1, 1, 1, 1,# 48hpf
+                    0, 0, 0, 0) # 72hpf
+allTraits$hpf_72 <- c(0, 0, 0, 0, # 1hpf
+                    0, 0, 0, 0, # 4hpf
+                    0, 0, 0, 0, # 9hpf
+                    0, 0, 0, 0, # 14hpf
+                    0, 0, 0, 0, # 22hpf
+                    0, 0, 0, # 28hpf
+                    0, 0, 0, 0, # 48hpf
+                    1, 1, 1, 1) # 72hpf
+datTraits <- as.data.frame(allTraits)
+dim(datTraits)
+rownames(datTraits) <- meta_filt$TubeID
+print(datTraits)
+```
+
+Define numbers of genes and samples
+```{r}
+nGenes = ncol(datExpr)
+nSamples = nrow(datExpr)
+```
+
+Recalculate MEs with color labels
+```{r}
+MEs0 = moduleEigengenes(datExpr, moduleColors,softPower=14)$eigengenes
+MEs = orderMEs(MEs0)
+names(MEs)
+```
+
+Correlations of traits with eigengenes
+```{r}
+moduleTraitCor = cor(MEs, datTraits, use = "p");
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples);
+Colors=sub("ME","",names(MEs))
+
+# Identify genes significantly associated with traits 
+geneTraitSignificance = as.data.frame(cor(datExpr, datTraits, use = "p"))
+GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples))
+
+# Combine gene info with module membership and trait correlations 
+geneInfo = data.frame(gene = names(datExpr),
+                      moduleColor = moduleColors,
+                      geneTraitSignificance,
+                      GSPvalue)
+
+# Read in gene id information 
+gene_id <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")[,1]
+
+# Bind gene_id with geneInfo and save as csv 
+all_info <- cbind(geneInfo, gene_id)
+write.csv(all_info, "../output/Molecular/mRNA_polyA/WGCNA/module_gene_trait_correlations_polyA.csv")
+
+# Count number of genes in each module 
+num_genes <- all_info %>%
+  dplyr::group_by(moduleColor) %>%
+  dplyr::summarise(num_queries = n_distinct(gene_id))
+# # A tibble: 7 × 2
+#   moduleColor num_queries
+#   <chr>             <int>
+# 1 blue               2765
+# 2 brown              1941
+# 3 green               632
+# 4 grey                  6
+# 5 red                 418
+# 6 turquoise          3021
+# 7 yellow              880
+
+moduleTraitTree = hclust(dist(t(moduleTraitCor)), method = "average");
+plot(moduleTraitTree, main = "Life stage clustering based on module-trait correlation", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+```
+
+Correlations of genes with eigengenes
+```{r}
+moduleGeneCor=cor(MEs,datExpr)
+moduleGenePvalue = corPvalueStudent(moduleGeneCor, nSamples)
+```
+
+Attempt at complexHeatmap
+```{r}
+#bold sig p-values
+#dendrogram with WGCNA MEtree cut-off
+#colored y-axis
+
+METree <- hclust(as.dist(1-cor(t(moduleTraitCor))), method = "average")
+
+#Create list of pvalues for eigengene correlation with specific life stages
+heatmappval <- signif(moduleTraitPvalue, 1)
+
+#Make list of heatmap row colors
+htmap.colors <- names(MEs)
+htmap.colors <- gsub("ME", "", htmap.colors)
+
+# Set so that life stages are in order 
+hpf_order <- c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72")
+
+pdf(file = "../output/Molecular/mRNA_polyA/WGCNA/Module-trait-relationship-heatmap_polyA.pdf", height = 11.5, width = 8)
+ht=Heatmap(moduleTraitCor, name = "Eigengene", column_title = "Module-Trait Eigengene Correlation", 
+        col = blueWhiteRed(50), 
+        row_names_side = "left", row_dend_side = "left",
+        width = unit(4, "in"), height = unit(8.5, "in"), 
+        column_order = match(hpf_order, colnames(moduleTraitCor)),
+        column_dend_reorder = FALSE, 
+        column_split = c(1,1,1,2,2,2,3,3), column_dend_height = unit(0.5, "in"),
+        cluster_rows = METree, row_split = 17, row_gap = unit(2.5, "mm"), border = TRUE,
+        cell_fun = function(j, i, x, y, w, h, col) {
+        if(heatmappval[i, j] <= 0.05) {
+            grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "bold"))
+        }
+        else {
+            grid.text(sprintf("%s", heatmappval[i, j]), x, y, gp = gpar(fontsize = 8, fontface = "plain"))
+        }},
+        column_names_gp =  gpar(fontsize = 10),
+row_names_gp = gpar(fontsize = 10, alpha = 0.75, border = TRUE, fill = htmap.colors))
+draw(ht)
+dev.off()
+```
+
+Plot by module 
+```{r}
+MEs <- read.csv("../output/Molecular/mRNA_polyA/WGCNA/WGCNA_ModuleEigengenes_polyA.csv")
+MEs_table <- MEs # new table for plotting 
+#MEs_table$X <- paste0("M", MEs_table$X)
+#MEs_table$TubeID <- rownames(MEs) # call rows as coolumn to merge with treatment data
+MEsPlotting <- MEs_table %>%
+  full_join(meta_filt, by = c("X" = "TubeID")) %>%
+  dplyr::select(-c("Date", "Metric", "EmbryosPerTube"))
+
+MEsPlotting_long <- MEsPlotting %>%
+  pivot_longer(cols = -c(X, hpf), names_to = "Module", values_to = "Eigengene")
+
+# Create the faceted boxplot
+ggplot(MEsPlotting_long, aes(x = hpf, y = Eigengene, fill = hpf)) +
+  geom_boxplot() +
+  facet_wrap(~ Module, scales = "free_y", ncol = 4) +  # Adjust ncol as needed
+  labs(title = "Module Eigengenes Across Time",
+       x = "Hours Post Fertilization",
+       y = "Eigengene Value") +
+  geom_hline(
+    yintercept = 0,
+    linetype = 'dotted',
+    color = 'black',
+    size = 0.5) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  scale_x_discrete(limits = c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72")) +
+  scale_fill_brewer(palette = "Set2") +  # You can change the color palette as needed
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_rect(fill = "lightgrey", color = NA),
+    strip.text = element_text(face = "bold")
+  )
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/module_boxplot_polyA.pdf", plot = last_plot(), height = 15, width = 25)
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/module_boxplot_polyA.png", plot = last_plot(), height = 15, width = 25)
+```
+
+Based on the boxplots, here is how I am grouping each module: 
+
+- Maternal - blue
+- Minor wave - red, green
+- Major wave - yellow, brown, turquoise
+
+Make plots of groups
+```{r}
+MEs <- read.csv("../output/Molecular/mRNA_polyA/WGCNA/WGCNA_ModuleEigengenes_polyA.csv")
+MEs_table <- MEs # new table for plotting 
+#MEs_table$X <- paste0("M", MEs_table$X)
+#MEs_table$TubeID <- rownames(MEs) # call rows as coolumn to merge with treatment data
+MEsPlotting <- MEs_table %>%
+  full_join(meta_filt, by = c("X" = "TubeID")) %>%
+  dplyr::select(-c("Date", "Metric", "EmbryosPerTube"))
+
+# Average modules to form the following groups: Maternal, Minor wave, Major wave
+## Group 1: Maternal
+maternal <- MEsPlotting %>%
+  dplyr::select(MEblue) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(Maternal_avg = mean(c_across(everything())))
+
+## Group 2: Minor Wave
+minor <- MEsPlotting %>%
+  dplyr::select(MEred, MEgreen) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(MinorWave_avg = mean(c_across(everything())))
+
+## Group 3: Major Wave
+major <- MEsPlotting %>%
+  dplyr::select(MEbrown, MEyellow, MEturquoise) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(MajorWave_avg = mean(c_across(everything())))
+
+# Combine all averages
+MEsPlotting_avg <- bind_cols(
+  MEsPlotting %>% dplyr::select(X, hpf),
+  maternal %>% dplyr::select(Maternal_avg),
+  minor %>% dplyr::select(MinorWave_avg),
+  major %>% dplyr::select(MajorWave_avg)
+)
+
+MEsPlotting_melt <- melt(MEsPlotting_avg, id.vars = c("X", "hpf"))
+MEsPlotting_melt$hpf <- factor(MEsPlotting_melt$hpf, levels = c("hpf_1", "hpf_4", "hpf_9", "hpf_14", "hpf_22", "hpf_28", "hpf_48", "hpf_72"))
+
+# Plot as boxplots 
+MEplot <- ggplot(MEsPlotting_melt, aes(x = hpf, y = value, fill = factor(hpf))) +
+  geom_boxplot(
+    aes(middle = mean(value)),
+    position = position_dodge(0.8),
+    outlier.shape = NA,
+    alpha = 0.7
+  ) + 
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    shape = 19,
+    size = 3,
+    color = "black",
+    position = position_dodge(0.75)
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = 'dotted',
+    color = 'black',
+    size = 0.5
+  ) +
+  scale_y_continuous(
+    name = "Module Eigengene",
+    limits = c(-0.5, 0.5),
+    breaks = seq(-0.5, 0.5, 0.25)
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  facet_wrap(~ variable, scales = "free_y") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_rect(fill = "lightgrey", color = NA),
+    strip.text = element_text(face = "bold")
+  ); MEplot
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/groups_boxplot_polyA.pdf", plot = MEplot, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/groups_boxplot_polyA.png", plot = MEplot, height = 15, width = 25)
+
+# Plot as line plot 
+MEplot_line <- ggplot(MEsPlotting_melt, aes(x = factor(hpf), y = value, group = 1)) +
+  geom_smooth(
+    method = "loess",
+    se = TRUE,
+    linewidth = 5,  # Increase line thickness
+    color = "blue",
+    fill = "lightblue",
+    alpha = 0.2
+  ) +
+  # geom_point(
+  #   stat = "summary",
+  #   fun = "mean",
+  #   size = 2,
+  #   color = "darkblue"
+  # ) +
+  # geom_hline(
+  #   yintercept = 0,
+  #   linetype = 'dotted',
+  #   color = 'black',
+  #   size = 1
+  # ) +
+  scale_y_continuous(
+    name = "Module Eigengene",
+    limits = c(-0.25, 0.25),
+    breaks = seq(-0.5, 0.5, 0.25)
+  ) +
+  scale_x_discrete(
+    name = "Hours post fertilization",
+    labels = function(x) gsub("hpf_", "", x)  # This removes the "hpf_" prefix
+  ) +
+  facet_wrap(~ variable, scales = "free_y") +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_rect(fill = "lightgrey", color = NA),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(hjust = 1)
+  ); MEplot_line
+
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/groups_lineplot_polyA.pdf", plot = MEplot_line, height = 15, width = 25)
+ggsave("../output/Molecular/mRNA_polyA/WGCNA/groups_lineplot_polyA.png", plot = MEplot_line, height = 15, width = 25)
+```
+
+- Maternal - blue
+- Minor wave - red, green
+- Major wave - yellow, brown, turquoise
+
+Add Groups to `all_info` to see how many genes are in each group 
+```{r}
+all_info <- read.csv("../output/Molecular/mRNA_polyA/WGCNA/module_gene_trait_correlations_polyA.csv")
+
+all_info_group <- all_info %>%
+  mutate(Group = case_when(
+    moduleColor %in% c("blue") ~ "Maternal",
+    moduleColor %in% c("red", "green") ~ "MinorWave",
+    moduleColor %in% c("yellow", "brown", "turquoise") ~ "MajorWave",
+    TRUE ~ "Other"  # This will catch any other colors not specified above
+  ))
+
+# Save as csv
+write.csv(all_info_group, "../output/Molecular/mRNA_polyA/WGCNA/module_gene_trait_correlations_groups_polyA.csv")
+
+# Count number of genes in each group 
+num_genes_group <- all_info_group %>%
+  dplyr::group_by(Group) %>%
+  dplyr::summarise(num_queries = n_distinct(gene_id))
+# # A tibble: 4 × 2
+#   Group     num_queries
+#   <chr>           <int>
+# 1 MajorWave        5842
+# 2 Maternal         2765
+# 3 MinorWave        1050
+# 4 Other               6
+```
+
+
+

@@ -1,0 +1,523 @@
+---
+title: "ribofree vs polyA differential expression"
+author: "Jill Ashey"
+date: "2025-04-29"
+output: html_document
+---
+
+Looking at differences in differential expression from ribofree and polyA samples 
+
+Load libraries 
+```{r}
+library(tidyverse)
+```
+
+Load counts
+```{r}
+polyA <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
+colnames(polyA)[1] <- "gene_id"
+colnames(polyA)[-1] <- paste0("polyA_", colnames(polyA)[-1])
+dim(polyA)
+
+ribofree <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
+colnames(ribofree)[1] <- "gene_id"
+colnames(ribofree)[-1] <- paste0("ribofree_", colnames(ribofree)[-1])
+dim(ribofree)
+```
+
+Load metadata
+```{r}
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
+  dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
+  filter(Metric == "Molecular")
+
+# Filter for sequenced samples
+meta_filt <- meta %>%
+  filter(TubeID %in% colnames(ribofree))
+```
+
+```{r}
+# Create named vector mapping TubeID to hpf 
+tube_to_hpf <- setNames(meta_filt$hpf, meta_filt$TubeID)
+
+# Get the sample columns (excluding gene_id)
+ribofree_samples <- colnames(ribofree)[-1]
+polyA_samples <- colnames(polyA)[-1]
+
+# Map TubeIDs to hpf
+ribofree_hpf <- tube_to_hpf[gsub("ribofree_", "", ribofree_samples)]
+polyA_hpf <- tube_to_hpf[gsub("polyA_", "", polyA_samples)]
+
+# Function to average by hpf for a given data frame and hpf mapping
+average_by_hpf <- function(df, hpf_vec, sample_prefix) {
+  # Remove gene_id column for calculation
+  data_mat <- as.matrix(df[,-1])
+  # Split columns by hpf group
+  hpf_groups <- unique(hpf_vec)
+  # For each hpf group, calculate rowMeans across matching columns
+  avg_mat <- sapply(hpf_groups, function(hpf) {
+    cols <- which(hpf_vec == hpf)
+    rowMeans(data_mat[, cols, drop=FALSE], na.rm=TRUE)
+  })
+  # Combine with gene_id
+  avg_df <- data.frame(gene_id = df$gene_id, avg_mat, check.names = FALSE)
+  colnames(avg_df)[-1] <- hpf_groups
+  avg_df
+}
+
+ribofree_avg <- average_by_hpf(ribofree, ribofree_hpf, "ribofree_")
+polyA_avg    <- average_by_hpf(polyA, polyA_hpf, "polyA_")
+```
+
+Cluster ribofree 
+```{r}
+# Scale expression per gene (z-score across timepoints)
+scale_z <- function(x) (x - mean(x)) / sd(x)
+scaled <- ribofree_avg %>%
+  column_to_rownames("gene_id") %>%
+  as.matrix() %>%
+  t() %>%
+  scale_z() %>%
+  t()
+
+# K-means clustering (try 6–10 clusters)
+set.seed(123)
+k <- 6
+km_res <- kmeans(scaled, centers = k, nstart = 25)
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+
+# First ensure 'scaled' is a data frame
+scaled <- as.data.frame(scaled)  # If it's a matrix
+
+# Then assign row names
+rownames(heatmap_data) <- scaled$gene_id
+
+# Convert to matrix with hpf stages as columns
+heatmap_data <- as.matrix(scaled[, -1])  # Assuming first column is gene_id
+rownames(heatmap_data) <- scaled$gene_id
+
+# Create color gradient
+col_fun <- colorRamp2(c(-0.24, 0, 0.9), c("blue", "white", "red"))
+
+# Create heatmap
+Heatmap(heatmap_data,
+        name = "Expression",
+        col = col_fun,
+        row_names_gp = gpar(fontsize = 6),  # Small font for genes
+        column_names_rot = 45,
+        show_row_names = FALSE,
+        column_title = "Developmental Stage (hpf)",
+        row_title = "Genes",
+        cluster_columns = FALSE)
+
+Heatmap(scaled)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+Merge and reshape for clustering 
+```{r}
+# Merge by gene_id
+merged <- inner_join(ribofree_avg, polyA_avg, by = "gene_id")
+
+# Scale expression per gene (z-score across timepoints)
+scale_z <- function(x) (x - mean(x)) / sd(x)
+
+scaled <- merged %>%
+  column_to_rownames("gene_id") %>%
+  as.matrix() %>%
+  t() %>%
+  scale_z() %>%
+  t()
+```
+
+Cluster
+```{r}
+# K-means clustering (try 6–10 clusters)
+set.seed(123)
+k <- 6
+km_res <- kmeans(scaled, centers = k, nstart = 25)
+
+# Add cluster labels to original data
+clustered <- as.data.frame(scaled)
+clustered$cluster <- factor(km_res$cluster)
+clustered$gene_id <- rownames(clustered)
+```
+
+Plot clustered trajectories
+```{r}
+# Reshape for plotting
+plot_data <- clustered %>%
+  pivot_longer(-c(gene_id, cluster), names_to = "sample", values_to = "zscore") %>%
+  separate(sample, into = c("type", "time"), sep = "_", convert = TRUE)
+
+# Plot mean trajectory per cluster
+ggplot(plot_data, aes(x = time, y = zscore, group = gene_id)) +
+  geom_line(alpha = 0.2) +
+  stat_summary(aes(group = cluster), fun = mean, geom = "line", color = "black", size = 1) +
+  facet_wrap(~cluster, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Gene Expression Trajectories by Cluster",
+       x = "Timepoint (hpf)", y = "Z-scored Expression")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## DE 
+
+### 1 v 4 hpf
+
+Read in polyA v ribofree 1v4hpf
+```{r}
+polyA_de <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v4_wald_polyA.csv")
+colnames(polyA_de)[1] <- "gene_id"
+colnames(polyA_de)[-1] <- paste0("polyA_", colnames(polyA_de)[-1])
+
+ribofree_de <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_sig_1v4_wald.csv")
+colnames(ribofree_de)[1] <- "gene_id"
+colnames(ribofree_de)[-1] <- paste0("ribofree_", colnames(ribofree_de)[-1])
+```
+
+Find shared and unique genes  
+```{r}
+# Get the gene IDs from each dataframe
+ribofree_genes <- ribofree_de$gene_id
+polya_genes <- polyA_de$gene_id
+
+# Shared genes
+shared_genes <- intersect(ribofree_genes, polya_genes)
+
+# Unique to ribofree
+unique_ribofree <- setdiff(ribofree_genes, polya_genes)
+
+# Unique to polyA
+unique_polya <- setdiff(polya_genes, ribofree_genes)
+
+# New df with shared genes 
+ribofree_shared <- ribofree_de[ribofree_de$gene_id %in% shared_genes, ]
+polya_shared <- polyA_de[polyA_de$gene_id %in% shared_genes, ]
+
+# New df with unique genes 
+ribofree_unique <- ribofree_de[ribofree_de$gene_id %in% unique_ribofree, ]
+polya_unique <- polyA_de[polyA_de$gene_id %in% unique_polya, ]
+```
+
+Merge shared dfs 
+```{r}
+# Merge shared genes dataframes
+shared_de <- merge(polya_shared, ribofree_shared, by = "gene_id")
+
+# Classify genes based on expression changes
+shared_de <- shared_de %>%
+  mutate(regulation_category = case_when(
+    polyA_regulation == "Up at 4 hpf" & ribofree_regulation == "Up at 4 hpf" ~ "Transcriptional Up",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Transcriptional Down",
+    polyA_regulation == "Up at 4 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Deadenylation",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 4 hpf" ~ "Readenylation",
+    polyA_regulation == "Up at 4 hpf" & ribofree_regulation == "NS" ~ "PolyA Increase, Transcription Unchanged",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "NS" ~ "PolyA Decrease, Transcription Unchanged",
+    ribofree_regulation == "Up at 4 hpf" & polyA_regulation == "NS" ~ "Ribofree Increase, PolyA Unchanged",
+    ribofree_regulation == "Up at 1 hpf" & polyA_regulation == "NS" ~ "Ribofree Decrease, PolyA Unchanged",
+    TRUE ~ "Complex/Other"
+  ))
+
+# Summarize regulation categories
+category_summary <- shared_de %>%
+  group_by(regulation_category) %>%
+  summarize(count = n())
+```
+
+Read in annot and merge with shared and unique dfs 
+```{r}
+annot <- read.delim("~/Desktop/GFFs/mcap/V3/Montipora_capitata_HIv3.genes.EggNog_results.txt")
+colnames(annot)[1] <- "gene_id"
+
+# Shared 
+merge_annot <- merge %>%
+  inner_join(annot, by = "gene_id")
+
+# Unique to ribofree
+merge_ribofree <- ribofree_unique %>%
+    inner_join(annot, by = "gene_id")
+```
+
+### 1 v 9 hpf
+
+Read in polyA v ribofree 1v9hpf
+```{r}
+polyA_de <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v9_wald_polyA.csv")
+colnames(polyA_de)[1] <- "gene_id"
+colnames(polyA_de)[-1] <- paste0("polyA_", colnames(polyA_de)[-1])
+
+ribofree_de <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_sig_1v9_wald.csv")
+colnames(ribofree_de)[1] <- "gene_id"
+colnames(ribofree_de)[-1] <- paste0("ribofree_", colnames(ribofree_de)[-1])
+```
+
+Find shared and unique genes  
+```{r}
+# Get the gene IDs from each dataframe
+ribofree_genes <- ribofree_de$gene_id
+polya_genes <- polyA_de$gene_id
+
+# Shared genes
+shared_genes <- intersect(ribofree_genes, polya_genes)
+
+# Unique to ribofree
+unique_ribofree <- setdiff(ribofree_genes, polya_genes)
+
+# Unique to polyA
+unique_polya <- setdiff(polya_genes, ribofree_genes)
+
+# New df with shared genes 
+ribofree_shared <- ribofree_de[ribofree_de$gene_id %in% shared_genes, ]
+polya_shared <- polyA_de[polyA_de$gene_id %in% shared_genes, ]
+
+# New df with unique genes 
+ribofree_unique <- ribofree_de[ribofree_de$gene_id %in% unique_ribofree, ]
+polya_unique <- polyA_de[polyA_de$gene_id %in% unique_polya, ]
+```
+
+Merge shared dfs 
+```{r}
+# Merge shared genes dataframes
+shared_de <- merge(polya_shared, ribofree_shared, by = "gene_id")
+
+# Classify genes based on expression changes
+shared_de <- shared_de %>%
+  mutate(regulation_category = case_when(
+    polyA_regulation == "Up at 9 hpf" & ribofree_regulation == "Up at 9 hpf" ~ "Transcriptional Up",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Transcriptional Down",
+    polyA_regulation == "Up at 9 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Deadenylation",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 9 hpf" ~ "Readenylation",
+    polyA_regulation == "Up at 9 hpf" & ribofree_regulation == "NS" ~ "PolyA Increase, Transcription Unchanged",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "NS" ~ "PolyA Decrease, Transcription Unchanged",
+    ribofree_regulation == "Up at 9 hpf" & polyA_regulation == "NS" ~ "Ribofree Increase, PolyA Unchanged",
+    ribofree_regulation == "Up at 1 hpf" & polyA_regulation == "NS" ~ "Ribofree Decrease, PolyA Unchanged",
+    TRUE ~ "Complex/Other"
+  ))
+
+# Summarize regulation categories
+category_summary <- shared_de %>%
+  group_by(regulation_category) %>%
+  summarize(count = n())
+```
+
+### 1 v 14 hpf
+
+Read in polyA v ribofree 1v14hpf
+```{r}
+polyA_de <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v14_wald_polyA.csv")
+colnames(polyA_de)[1] <- "gene_id"
+colnames(polyA_de)[-1] <- paste0("polyA_", colnames(polyA_de)[-1])
+
+ribofree_de <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_sig_1v14_wald.csv")
+colnames(ribofree_de)[1] <- "gene_id"
+colnames(ribofree_de)[-1] <- paste0("ribofree_", colnames(ribofree_de)[-1])
+```
+
+Find shared and unique genes  
+```{r}
+# Get the gene IDs from each dataframe
+ribofree_genes <- ribofree_de$gene_id
+polya_genes <- polyA_de$gene_id
+
+# Shared genes
+shared_genes <- intersect(ribofree_genes, polya_genes)
+
+# Unique to ribofree
+unique_ribofree <- setdiff(ribofree_genes, polya_genes)
+
+# Unique to polyA
+unique_polya <- setdiff(polya_genes, ribofree_genes)
+
+# New df with shared genes 
+ribofree_shared <- ribofree_de[ribofree_de$gene_id %in% shared_genes, ]
+polya_shared <- polyA_de[polyA_de$gene_id %in% shared_genes, ]
+
+# New df with unique genes 
+ribofree_unique <- ribofree_de[ribofree_de$gene_id %in% unique_ribofree, ]
+polya_unique <- polyA_de[polyA_de$gene_id %in% unique_polya, ]
+```
+
+Merge shared dfs 
+```{r}
+# Merge shared genes dataframes
+shared_de <- merge(polya_shared, ribofree_shared, by = "gene_id")
+
+# Classify genes based on expression changes
+shared_de <- shared_de %>%
+  mutate(regulation_category = case_when(
+    polyA_regulation == "Up at 14 hpf" & ribofree_regulation == "Up at 14 hpf" ~ "Transcriptional Up",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Transcriptional Down",
+    polyA_regulation == "Up at 14 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Deadenylation",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 14 hpf" ~ "Readenylation",
+    polyA_regulation == "Up at 14 hpf" & ribofree_regulation == "NS" ~ "PolyA Increase, Transcription Unchanged",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "NS" ~ "PolyA Decrease, Transcription Unchanged",
+    ribofree_regulation == "Up at 14 hpf" & polyA_regulation == "NS" ~ "Ribofree Increase, PolyA Unchanged",
+    ribofree_regulation == "Up at 1 hpf" & polyA_regulation == "NS" ~ "Ribofree Decrease, PolyA Unchanged",
+    TRUE ~ "Complex/Other"
+  ))
+
+# Summarize regulation categories
+category_summary <- shared_de %>%
+  group_by(regulation_category) %>%
+  summarize(count = n())
+```
+
+### 1 v 22 hpf
+
+Read in polyA v ribofree 1v22hpf
+```{r}
+polyA_de <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v22_wald_polyA.csv")
+colnames(polyA_de)[1] <- "gene_id"
+colnames(polyA_de)[-1] <- paste0("polyA_", colnames(polyA_de)[-1])
+
+ribofree_de <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_sig_1v22_wald.csv")
+colnames(ribofree_de)[1] <- "gene_id"
+colnames(ribofree_de)[-1] <- paste0("ribofree_", colnames(ribofree_de)[-1])
+```
+
+Find shared and unique genes  
+```{r}
+# Get the gene IDs from each dataframe
+ribofree_genes <- ribofree_de$gene_id
+polya_genes <- polyA_de$gene_id
+
+# Shared genes
+shared_genes <- intersect(ribofree_genes, polya_genes)
+
+# Unique to ribofree
+unique_ribofree <- setdiff(ribofree_genes, polya_genes)
+
+# Unique to polyA
+unique_polya <- setdiff(polya_genes, ribofree_genes)
+
+# New df with shared genes 
+ribofree_shared <- ribofree_de[ribofree_de$gene_id %in% shared_genes, ]
+polya_shared <- polyA_de[polyA_de$gene_id %in% shared_genes, ]
+
+# New df with unique genes 
+ribofree_unique <- ribofree_de[ribofree_de$gene_id %in% unique_ribofree, ]
+polya_unique <- polyA_de[polyA_de$gene_id %in% unique_polya, ]
+```
+
+Merge shared dfs 
+```{r}
+# Merge shared genes dataframes
+shared_de <- merge(polya_shared, ribofree_shared, by = "gene_id")
+
+# Classify genes based on expression changes
+shared_de <- shared_de %>%
+  mutate(regulation_category = case_when(
+    polyA_regulation == "Up at 22 hpf" & ribofree_regulation == "Up at 22 hpf" ~ "Transcriptional Up",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Transcriptional Down",
+    polyA_regulation == "Up at 22 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Deadenylation",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 22 hpf" ~ "Readenylation",
+    polyA_regulation == "Up at 22 hpf" & ribofree_regulation == "NS" ~ "PolyA Increase, Transcription Unchanged",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "NS" ~ "PolyA Decrease, Transcription Unchanged",
+    ribofree_regulation == "Up at 22 hpf" & polyA_regulation == "NS" ~ "Ribofree Increase, PolyA Unchanged",
+    ribofree_regulation == "Up at 1 hpf" & polyA_regulation == "NS" ~ "Ribofree Decrease, PolyA Unchanged",
+    TRUE ~ "Complex/Other"
+  ))
+
+# Summarize regulation categories
+category_summary <- shared_de %>%
+  group_by(regulation_category) %>%
+  summarize(count = n())
+```
+
+### 1 v 72 hpf
+
+Read in polyA v ribofree 1v72hpf
+```{r}
+polyA_de <- read.csv("../output/Molecular/mRNA_polyA/mRNA_DE_results_sig_1v72_wald_polyA.csv")
+colnames(polyA_de)[1] <- "gene_id"
+colnames(polyA_de)[-1] <- paste0("polyA_", colnames(polyA_de)[-1])
+
+ribofree_de <- read.csv("../output/Molecular/mRNA/mRNA_DE_results_sig_1v72_wald.csv")
+colnames(ribofree_de)[1] <- "gene_id"
+colnames(ribofree_de)[-1] <- paste0("ribofree_", colnames(ribofree_de)[-1])
+```
+
+Find shared and unique genes  
+```{r}
+# Get the gene IDs from each dataframe
+ribofree_genes <- ribofree_de$gene_id
+polya_genes <- polyA_de$gene_id
+
+# Shared genes
+shared_genes <- intersect(ribofree_genes, polya_genes)
+
+# Unique to ribofree
+unique_ribofree <- setdiff(ribofree_genes, polya_genes)
+
+# Unique to polyA
+unique_polya <- setdiff(polya_genes, ribofree_genes)
+
+# New df with shared genes 
+ribofree_shared <- ribofree_de[ribofree_de$gene_id %in% shared_genes, ]
+polya_shared <- polyA_de[polyA_de$gene_id %in% shared_genes, ]
+
+# New df with unique genes 
+ribofree_unique <- ribofree_de[ribofree_de$gene_id %in% unique_ribofree, ]
+polya_unique <- polyA_de[polyA_de$gene_id %in% unique_polya, ]
+```
+
+Merge shared dfs 
+```{r}
+# Merge shared genes dataframes
+shared_de <- merge(polya_shared, ribofree_shared, by = "gene_id")
+
+# Classify genes based on expression changes
+shared_de <- shared_de %>%
+  mutate(regulation_category = case_when(
+    polyA_regulation == "Up at 72 hpf" & ribofree_regulation == "Up at 72 hpf" ~ "Transcriptional Up",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Transcriptional Down",
+    polyA_regulation == "Up at 72 hpf" & ribofree_regulation == "Up at 1 hpf" ~ "Deadenylation",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "Up at 72 hpf" ~ "Readenylation",
+    polyA_regulation == "Up at 72 hpf" & ribofree_regulation == "NS" ~ "PolyA Increase, Transcription Unchanged",
+    polyA_regulation == "Up at 1 hpf" & ribofree_regulation == "NS" ~ "PolyA Decrease, Transcription Unchanged",
+    ribofree_regulation == "Up at 72 hpf" & polyA_regulation == "NS" ~ "Ribofree Increase, PolyA Unchanged",
+    ribofree_regulation == "Up at 1 hpf" & polyA_regulation == "NS" ~ "Ribofree Decrease, PolyA Unchanged",
+    TRUE ~ "Complex/Other"
+  ))
+
+# Summarize regulation categories
+category_summary <- shared_de %>%
+  group_by(regulation_category) %>%
+  summarize(count = n())
+```
+
+
+

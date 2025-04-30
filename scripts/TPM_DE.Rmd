@@ -73,8 +73,19 @@ TPM_df <- cbind(gene_id = counts_length$gene_id, TPM)
 TPM_df[,-1] <- log2(TPM_df[,-1] + 1)
 
 # Save as csv
-write.csv(TPM_df, "../data/Molecular/mRNA/TPM_log.csv")
+#write.csv(TPM_df, "../data/Molecular/mRNA/TPM_log.csv")
+TPM_df <- read.csv("../data/Molecular/mRNA/TPM_log.csv")[-1]
 ```
+
+Look at TPM in 1hpf samples 
+```{r}
+TPM_df_1hpf <- TPM_df[,1:5]
+TPM_df_1hpf_greater1 <- TPM_df_1hpf[rowSums(TPM_df_1hpf[,-1]) > 1, ]
+dim(TPM_df_1hpf_greater1)
+```
+
+19142 genes were expressed >1 TPM--> the maternal complement. 
+
 
 Now we want to compare the DEs using the TPMs. We already did the differential expression analysis in [this code](https://github.com/JillAshey/DevelopmentalTimeseries/blob/main/scripts/mRNA_DEG.Rmd). 
 

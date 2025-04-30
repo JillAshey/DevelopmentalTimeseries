@@ -96,7 +96,7 @@ meta_filt <- meta %>%
   filter(TubeID %in% colnames(counts_filt))
 ```
 
-Remove M14 and M61 - these are outliers (based on PCA below)
+Remove M61 - these are outliers (based on PCA below)
 ```{r}
 counts_filt <- counts_filt[, !(colnames(counts_filt) %in% c("M61"))]
 meta_filt <- meta_filt[!(meta_filt$TubeID %in% c("M61")), ]
