@@ -5,7 +5,7 @@ date: "2025-04-29"
 output: html_document
 ---
 
-WGCNA for Mcap 2023 developmental timeseries mRNA data. Using code from [Erin Chille](https://github.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/blob/master/2a-WGCNA/Developmental_WGCNA.Rmd) and [Zoe Dellaert](https://github.com/imkristenbrown/Heron-Pdam-gene-expression/blob/master/BioInf/scripts/WGCNA/WGCNA.Rmd).
+WGCNA for Mcap 2023 developmental timeseries mRNA data - polyA. Using code from [Erin Chille](https://github.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/blob/master/2a-WGCNA/Developmental_WGCNA.Rmd) and [Zoe Dellaert](https://github.com/imkristenbrown/Heron-Pdam-gene-expression/blob/master/BioInf/scripts/WGCNA/WGCNA.Rmd).
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -48,12 +48,7 @@ library(ComplexHeatmap)
 #sessionInfo()
 ```
 
-Load filtered counts
-```{r}
-#counts <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
-```
-
-Load unfiltered counts data
+Load filtered counts data
 ```{r}
 counts <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
 counts <- as.data.frame(counts)
