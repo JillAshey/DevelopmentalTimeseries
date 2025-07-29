@@ -1,0 +1,373 @@
+---
+title: "1hpf presence and functional enrichment"
+author: "Jill Ashey"
+date: "2025-07-29"
+output: html_document
+---
+
+This script will assess the presence of genes from the ribofree and polyA samples, as well as the functional enrichment. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(topGO)
+library(genefilter)
+```
+
+### Ribofree samples 
+
+Read in counts 
+```{r}
+ribo <- read_csv("../data/Molecular/mRNA/Mcap_gene_count_matrix.csv")
+ribo <- as.data.frame(ribo)
+rownames(ribo) <- ribo[,1] #set first column that contains gene names as rownames
+ribo <- ribo[,-1] # remove column w/ gene names 
+colnames(ribo) <- ifelse(
+  grepl("\\.gtf$", colnames(ribo)),
+  paste0("M", sub("_.*", "", colnames(ribo))),
+  colnames(ribo)
+)
+dim(ribo)
+```
+
+Subset by 1hpf samples 
+```{r}
+ribo_1hpf <- ribo %>%
+  dplyr::select(M6, M7, M8, M9)
+```
+
+Remove any genes that have 0 counts across all samples (ie these genes were not expressed)
+```{r}
+dim(ribo_1hpf) 
+
+ribo_1hpf<-ribo_1hpf %>%
+     mutate(Total = rowSums(.[, 1:4]))%>%
+    filter(!Total==0)%>%
+    dplyr::select(!Total)
+
+dim(ribo_1hpf)
+```
+
+Started with 54384 genes, the total number in the annotation. After removing genes with 0s across 1hpf samples, 28317 genes are left. 
+
+Filter data with pOverA (50% of samples should have at least 5 counts)
+```{r}
+filt <- filterfun(pOverA(0.5,2))
+
+#create filter for the counts data
+gfilt <- genefilter(ribo_1hpf, filt)
+
+#identify genes to keep by count filter
+gkeep <- ribo_1hpf[gfilt,]
+
+#identify gene lists
+gn.keep <- rownames(gkeep)
+
+#gene count data filtered in PoverA, P percent of the samples have counts over A
+ribo_1hpf_filt <- as.data.frame(ribo_1hpf[which(rownames(ribo_1hpf) %in% gn.keep),])
+
+#How many rows do we have before and after filtering?
+nrow(ribo_1hpf) #Before
+nrow(ribo_1hpf_filt) #After
+```
+
+Read in gene2go info 
+```{r}
+mcap_gene2go <- read.delim("../data/Molecular/Mcap_V3_gene2go.tab", sep = "\t")
+```
+
+### Ribofree filtered data
+
+Make list of genes for input to topGO
+```{r}
+# Genes of interest 
+ribo_1hpf_filt$gene_id <- rownames(ribo_1hpf_filt)
+clust_genes <- as.character(ribo_1hpf_filt$gene_id)
+
+# All genes 
+all_genes <- as.character(mcap_gene2go$X.query)
+
+# Apply 1 or 0 if gene is gene of interest 
+GeneList <- factor(as.integer(all_genes %in% clust_genes))
+names(GeneList) <- all_genes
+```
+
+The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
+
+Read in gene-to-go-mappings
+```{r}
+gene2go_topgo <- readMappings("../data/Molecular/Mcap_V3_gene2go.tab", IDsep=";")
+```
+
+Set function to select genes of interest (ie those that have pvalue < 0.05)
+```{r}
+topDiffGenes <- function(allScore) {
+return(allScore < 0.05)}
+```
+
+#### Biological Processes
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
+GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
+
+# Add ontology col
+GO_BP_En_sig$ontology <- "Biological Processes"
+```
+
+#### Molecular Functions 
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
+GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
+
+# Add ontology col
+GO_MF_En_sig$ontology <- "Molecular Functions"
+```
+
+#### Join ontologies 
+
+Bind so there is a df that has significantly enriched GO terms for all ontologies 
+```{r}
+GO_En_sig_gene <- rbind(GO_BP_En_sig, GO_MF_En_sig)
+
+# Separate GO terms into one per row
+go_long <- mcap_gene2go %>%
+  separate_rows(GOs, sep = ";\\s*")  # splits on semicolon and optional space
+
+# Join go_long with GO_En_sig_gene
+GO_En_sig_gene <- GO_En_sig_gene %>%
+  inner_join(go_long, by = c("GO.ID" = "GOs"))
+
+# Join the datasets based on genes present in ribofree samples (ie those used for the functional enrichment)
+GO_En_sig_gene_ribo_1hpf_filt <- GO_En_sig_gene %>%
+  filter(X.query %in% clust_genes)
+unique(GO_En_sig_gene_ribo_1hpf_filt$Term)
+length(unique(GO_En_sig_gene_ribo_1hpf_filt$Term))
+length(unique(GO_En_sig_gene_ribo_1hpf_filt$X.query))
+
+# Save as csv 
+write.csv(GO_En_sig_gene_ribo_1hpf_filt, "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_filt_expressed_genes.csv")
+```
+
+Plot
+```{r}
+plot_data <- GO_En_sig_gene_ribo_1hpf_filt %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(X.query),
+            Fisher = mean(Fisher), .groups = 'drop') %>%
+  group_by(ontology) %>%
+  slice_max(order_by = gene_count, n = 10)
+
+ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
+  geom_bar(stat = "identity") +
+  #geom_text(aes(label = gene_count), vjust = -0.5, color = "black", size = 3) +
+  coord_flip() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  facet_grid(vars(ontology), scales = "free", space = "free_y") + 
+  labs(x = "GO Term",
+       y = "Number of Genes",
+       fill = "Fisher Value") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 36, face = "bold"),        # Axis title size
+    axis.text = element_text(size = 34, colour = "black"),                        # Axis text size
+    legend.title = element_text(size = 34, face = "bold"),      # Legend title size
+    legend.text = element_text(size = 32),                      # Legend text size
+    strip.text = element_text(size = 34, face = "bold"),        # Facet text size
+    strip.background = element_rect(fill = "lightgray", color = "black", size = 1.5),         # Facet background
+    axis.line = element_line(size = 1, colour = "black"),       # Enhanced axis lines
+    axis.ticks = element_line(size = 1),                        # Thicker axis ticks
+     #panel.border = element_blank()                             # Remove panel border
+    #panel.grid.major = element_blank(),                         # Remove major grid lines
+    #panel.grid.minor = element_blank()                          # Remove minor grid lines
+        panel.border = element_rect(color = "black", size = 1.2),   # Enhanced facet border lines
+    panel.grid.major = element_line(size = 0.5, color = "gray"), # Grid lines inside the facets
+    panel.spacing = unit(1, "lines"),                           # Increase space between facets
+    strip.placement = "outside"    
+  )
+
+ggsave(filename = "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_filt_expressed_genes_top10.pdf", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_filt_expressed_genes_top10.png", last_plot(), width = 30, height = 40)
+```
+
+### Ribofree data (not filtered)
+
+Make list of genes for input to topGO
+```{r}
+# Genes of interest 
+ribo_1hpf$gene_id <- rownames(ribo_1hpf)
+clust_genes <- as.character(ribo_1hpf$gene_id)
+
+# All genes 
+all_genes <- as.character(mcap_gene2go$X.query)
+
+# Apply 1 or 0 if gene is gene of interest 
+GeneList <- factor(as.integer(all_genes %in% clust_genes))
+names(GeneList) <- all_genes
+```
+
+The following code will perform GO enrichment using the weighted Fisher's exact test to assess whether specific GO terms are overrepresented in the genes targeted by miRNAs. 
+
+Read in gene-to-go-mappings
+```{r}
+gene2go_topgo <- readMappings("../data/Molecular/Mcap_V3_gene2go.tab", IDsep=";")
+```
+
+Set function to select genes of interest (ie those that have pvalue < 0.05)
+```{r}
+topDiffGenes <- function(allScore) {
+return(allScore < 0.05)}
+```
+
+#### Biological Processes
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_BP <-new("topGOdata", ontology="BP", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_BP_FE <- runTest(GO_BP, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_BP_En <- GenTable(GO_BP, Fisher = GO_BP_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_BP_En$Fisher<-as.numeric(GO_BP_En$Fisher)
+GO_BP_En_sig<-GO_BP_En[GO_BP_En$Fisher<0.05,]
+
+# Add ontology col
+GO_BP_En_sig$ontology <- "Biological Processes"
+```
+
+#### Molecular Functions 
+
+Create `topGOdata` object, which is required for topGO analysis
+```{r}
+GO_MF <-new("topGOdata", ontology="MF", gene2GO=gene2go_topgo, allGenes=GeneList, annot = annFUN.gene2GO, geneSel=topDiffGenes)
+```
+
+Run GO enrichment test 
+```{r}
+GO_MF_FE <- runTest(GO_MF, algorithm="weight01", statistic="fisher")
+```
+
+Generate results table 
+```{r}
+GO_MF_En <- GenTable(GO_MF, Fisher = GO_MF_FE, orderBy = "Fisher", numChar = 51, topNodes = 100)
+```
+
+Filter by significant results
+```{r}
+GO_MF_En$Fisher<-as.numeric(GO_MF_En$Fisher)
+GO_MF_En_sig<-GO_MF_En[GO_MF_En$Fisher<0.05,]
+
+# Add ontology col
+GO_MF_En_sig$ontology <- "Molecular Functions"
+```
+
+#### Join ontologies 
+
+Bind so there is a df that has significantly enriched GO terms for all ontologies 
+```{r}
+GO_En_sig_gene <- rbind(GO_BP_En_sig, GO_MF_En_sig)
+
+# Separate GO terms into one per row
+go_long <- mcap_gene2go %>%
+  separate_rows(GOs, sep = ";\\s*")  # splits on semicolon and optional space
+
+# Join go_long with GO_En_sig_gene
+GO_En_sig_gene <- GO_En_sig_gene %>%
+  inner_join(go_long, by = c("GO.ID" = "GOs"))
+
+# Join the datasets based on genes present in ribofree samples (ie those used for the functional enrichment)
+GO_En_sig_gene_ribo_1hpf <- GO_En_sig_gene %>%
+  filter(X.query %in% clust_genes)
+unique(GO_En_sig_gene_ribo_1hpf$Term)
+length(unique(GO_En_sig_gene_ribo_1hpf$Term))
+length(unique(GO_En_sig_gene_ribo_1hpf$X.query))
+
+# Save as csv 
+write.csv(GO_En_sig_gene_ribo_1hpf, "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_expressed_genes.csv")
+```
+
+Plot
+```{r}
+plot_data <- GO_En_sig_gene_ribo_1hpf %>%
+  group_by(Term, ontology) %>%
+  summarise(gene_count = n_distinct(X.query),
+            Fisher = mean(Fisher), .groups = 'drop') %>%
+  group_by(ontology) %>%
+  slice_max(order_by = gene_count, n = 10)
+
+ggplot(plot_data, aes(x = reorder(Term, gene_count), y = gene_count, fill = Fisher)) +
+  geom_bar(stat = "identity") +
+  #geom_text(aes(label = gene_count), vjust = -0.5, color = "black", size = 3) +
+  coord_flip() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  facet_grid(vars(ontology), scales = "free", space = "free_y") + 
+  labs(x = "GO Term",
+       y = "Number of Genes",
+       fill = "Fisher Value") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 36, face = "bold"),        # Axis title size
+    axis.text = element_text(size = 34, colour = "black"),                        # Axis text size
+    legend.title = element_text(size = 34, face = "bold"),      # Legend title size
+    legend.text = element_text(size = 32),                      # Legend text size
+    strip.text = element_text(size = 34, face = "bold"),        # Facet text size
+    strip.background = element_rect(fill = "lightgray", color = "black", size = 1.5),         # Facet background
+    axis.line = element_line(size = 1, colour = "black"),       # Enhanced axis lines
+    axis.ticks = element_line(size = 1),                        # Thicker axis ticks
+     #panel.border = element_blank()                             # Remove panel border
+    #panel.grid.major = element_blank(),                         # Remove major grid lines
+    #panel.grid.minor = element_blank()                          # Remove minor grid lines
+        panel.border = element_rect(color = "black", size = 1.2),   # Enhanced facet border lines
+    panel.grid.major = element_line(size = 0.5, color = "gray"), # Grid lines inside the facets
+    panel.spacing = unit(1, "lines"),                           # Increase space between facets
+    strip.placement = "outside"    
+  )
+
+ggsave(filename = "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_expressed_genes_top10.pdf", last_plot(), width = 30, height = 40)
+ggsave(filename = "../output/Molecular/mRNA/ribo_1hpf_enrichment/GO_en_sig_ribo_1hpf_expressed_genes_top10.png", last_plot(), width = 30, height = 40)
+```
+
