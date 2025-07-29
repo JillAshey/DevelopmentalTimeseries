@@ -12,20 +12,32 @@ Load libraries
 library(tidyverse)
 ```
 
-Load counts
-```{r}
-polyA <- read.csv("../output/Molecular/mRNA_polyA/mRNA_polyA_filtered_counts.csv")
-colnames(polyA)[1] <- "gene_id"
-colnames(polyA)[-1] <- paste0("polyA_", colnames(polyA)[-1])
-dim(polyA)
+## Counts 
 
-ribofree <- read.csv("../output/Molecular/mRNA/mRNA_filtered_counts.csv")
-colnames(ribofree)[1] <- "gene_id"
-colnames(ribofree)[-1] <- paste0("ribofree_", colnames(ribofree)[-1])
-dim(ribofree)
+Read in raw counts for ribofree 
+```{r}
+ribo <- read_csv("../data/Molecular/mRNA/Mcap_gene_count_matrix.csv")
+ribo <- as.data.frame(ribo)
+rownames(ribo) <- ribo[,1] #set first column that contains gene names as rownames
+ribo <- ribo[,-1] # remove column w/ gene names 
+colnames(ribo) <- gsub("^X", "M", sub("_.*", "", colnames(ribo))) # remove extra info from col name
+colnames(ribo) <- paste0("M", colnames(ribo))
+dim(ribo)
 ```
 
-Load metadata
+Read in raw counts for polyA 
+```{r}
+polyA <- read_csv("../data/Molecular/mRNA_polyA/Mcap_polyA_gene_count_matrix.csv")
+polyA <- as.data.frame(polyA)
+rownames(polyA) <- polyA[,1] #set first column that contains gene names as rownames
+polyA <- polyA[,-1] # remove column w/ gene names 
+colnames(polyA) <- gsub(".bam.gtf", "", colnames(polyA))
+dim(polyA)
+```
+
+I'm not going to do any counts filtering initially. I want to plot the genes over time
+
+Read in metadata
 ```{r}
 meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
   dplyr::select(TubeID, Date, hpf, Metric, EmbryosPerTube) %>%
@@ -33,153 +45,133 @@ meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
 
 # Filter for sequenced samples
 meta_filt <- meta %>%
-  filter(TubeID %in% colnames(ribofree))
+  filter(TubeID %in% colnames(polyA))
 ```
 
+Tidy data and combine ribo and polyA dfs
 ```{r}
-# Create named vector mapping TubeID to hpf 
-tube_to_hpf <- setNames(meta_filt$hpf, meta_filt$TubeID)
+ribo_long <- ribo %>%
+  rownames_to_column(var = "GeneID") %>%
+  pivot_longer(-GeneID, names_to = "TubeID", values_to = "Counts") %>%
+  mutate(Library = "ribo")
 
-# Get the sample columns (excluding gene_id)
-ribofree_samples <- colnames(ribofree)[-1]
-polyA_samples <- colnames(polyA)[-1]
+polyA_long <- polyA %>%
+  rownames_to_column(var = "GeneID") %>%
+  pivot_longer(-GeneID, names_to = "TubeID", values_to = "Counts") %>%
+  mutate(Library = "polyA")
 
-# Map TubeIDs to hpf
-ribofree_hpf <- tube_to_hpf[gsub("ribofree_", "", ribofree_samples)]
-polyA_hpf <- tube_to_hpf[gsub("polyA_", "", polyA_samples)]
-
-# Function to average by hpf for a given data frame and hpf mapping
-average_by_hpf <- function(df, hpf_vec, sample_prefix) {
-  # Remove gene_id column for calculation
-  data_mat <- as.matrix(df[,-1])
-  # Split columns by hpf group
-  hpf_groups <- unique(hpf_vec)
-  # For each hpf group, calculate rowMeans across matching columns
-  avg_mat <- sapply(hpf_groups, function(hpf) {
-    cols <- which(hpf_vec == hpf)
-    rowMeans(data_mat[, cols, drop=FALSE], na.rm=TRUE)
-  })
-  # Combine with gene_id
-  avg_df <- data.frame(gene_id = df$gene_id, avg_mat, check.names = FALSE)
-  colnames(avg_df)[-1] <- hpf_groups
-  avg_df
-}
-
-ribofree_avg <- average_by_hpf(ribofree, ribofree_hpf, "ribofree_")
-polyA_avg    <- average_by_hpf(polyA, polyA_hpf, "polyA_")
+# Combine
+combined_counts <- bind_rows(ribo_long, polyA_long)
 ```
 
-Cluster ribofree 
+Add time point metadata
 ```{r}
-# Scale expression per gene (z-score across timepoints)
-scale_z <- function(x) (x - mean(x)) / sd(x)
-scaled <- ribofree_avg %>%
-  column_to_rownames("gene_id") %>%
-  as.matrix() %>%
-  t() %>%
-  scale_z() %>%
-  t()
+meta_filt$TubeID <- as.character(meta_filt$TubeID)
 
-# K-means clustering (try 6–10 clusters)
-set.seed(123)
-k <- 6
-km_res <- kmeans(scaled, centers = k, nstart = 25)
+# Join
+combined_counts <- combined_counts %>%
+  left_join(meta_filt, by = "TubeID")
+
+# Set levels of factors
+combined_counts$hpf <- factor(combined_counts$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
 ```
 
+Normalize counts data - counts per million
 ```{r}
-library(ComplexHeatmap)
-library(circlize)
+library_sizes <- combined_counts %>%
+  group_by(Library, TubeID) %>%
+  summarize(LibSize = sum(Counts))
 
-# First ensure 'scaled' is a data frame
-scaled <- as.data.frame(scaled)  # If it's a matrix
-
-# Then assign row names
-rownames(heatmap_data) <- scaled$gene_id
-
-# Convert to matrix with hpf stages as columns
-heatmap_data <- as.matrix(scaled[, -1])  # Assuming first column is gene_id
-rownames(heatmap_data) <- scaled$gene_id
-
-# Create color gradient
-col_fun <- colorRamp2(c(-0.24, 0, 0.9), c("blue", "white", "red"))
-
-# Create heatmap
-Heatmap(heatmap_data,
-        name = "Expression",
-        col = col_fun,
-        row_names_gp = gpar(fontsize = 6),  # Small font for genes
-        column_names_rot = 45,
-        show_row_names = FALSE,
-        column_title = "Developmental Stage (hpf)",
-        row_title = "Genes",
-        cluster_columns = FALSE)
-
-Heatmap(scaled)
+# Add CPM
+combined_counts <- combined_counts %>%
+  left_join(library_sizes, by = c("Library", "TubeID")) %>%
+  mutate(CPM = (Counts / LibSize) * 1e6)
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-Merge and reshape for clustering 
+Plot example gene: 
 ```{r}
-# Merge by gene_id
-merged <- inner_join(ribofree_avg, polyA_avg, by = "gene_id")
+# Subset one gene
+gene_of_interest <- "Montipora_capitata_HIv3___TS.g40891.t1b"
 
-# Scale expression per gene (z-score across timepoints)
-scale_z <- function(x) (x - mean(x)) / sd(x)
+gene_plot <- combined_counts %>%
+  filter(GeneID == gene_of_interest)
 
-scaled <- merged %>%
-  column_to_rownames("gene_id") %>%
-  as.matrix() %>%
-  t() %>%
-  scale_z() %>%
-  t()
+ggplot(gene_plot, aes(x = hpf, y = CPM, color = Library, group = Library)) +
+  geom_point() +
+  geom_line() +
+  labs(title = gene_of_interest,
+       x = "Hours post fertilization (hpf)",
+       y = "CPM",
+       color = "Library") +
+  theme_minimal()
+
 ```
 
-Cluster
+Calculate mean CPM per gene/timepoint/library
 ```{r}
-# K-means clustering (try 6–10 clusters)
-set.seed(123)
-k <- 6
-km_res <- kmeans(scaled, centers = k, nstart = 25)
-
-# Add cluster labels to original data
-clustered <- as.data.frame(scaled)
-clustered$cluster <- factor(km_res$cluster)
-clustered$gene_id <- rownames(clustered)
+mean_cpm <- combined_counts %>%
+  group_by(GeneID, hpf, Library) %>%
+  summarize(mean_CPM = mean(CPM), .groups = "drop")
 ```
 
-Plot clustered trajectories
+Pivot table 
 ```{r}
-# Reshape for plotting
-plot_data <- clustered %>%
-  pivot_longer(-c(gene_id, cluster), names_to = "sample", values_to = "zscore") %>%
-  separate(sample, into = c("type", "time"), sep = "_", convert = TRUE)
-
-# Plot mean trajectory per cluster
-ggplot(plot_data, aes(x = time, y = zscore, group = gene_id)) +
-  geom_line(alpha = 0.2) +
-  stat_summary(aes(group = cluster), fun = mean, geom = "line", color = "black", size = 1) +
-  facet_wrap(~cluster, scales = "free_y") +
-  theme_minimal() +
-  labs(title = "Gene Expression Trajectories by Cluster",
-       x = "Timepoint (hpf)", y = "Z-scored Expression")
+library_wide <- mean_cpm %>%
+  pivot_wider(names_from = Library,
+              values_from = mean_CPM,
+              values_fill = 0)  # fill missing with 0
 ```
 
+Compute the ratio (polyA / ribofree for each gene for each timepoint) and plot
+```{r}
+library_wide <- library_wide %>%
+  mutate(Ratio = polyA / (ribo + 1))
 
+# Plot example for one gene
+gene_plot <- library_wide %>%
+  filter(GeneID == "Montipora_capitata_HIv3___RNAseq.g45549.t1")
 
+ggplot(gene_plot, aes(x = hpf, y = Ratio)) +
+  geom_point() +
+  geom_line() +
+  scale_y_log10() +
+  labs(title = "PolyA / rRNA ratio",
+       x = "hpf",
+       y = "Ratio (polyA / rRNA)",
+       subtitle = unique(gene_plot$GeneID)) +
+  theme_minimal()
+```
 
+Summarize the ratio data based on expected biological outcomes. Here, I am using 4hpf as the early timepoint and 48 hpf as the later timepoint. 
+```{r}
+library_wide <- library_wide %>%
+  mutate(hpf_num = as.numeric(str_remove(as.character(hpf), " hpf")))
 
+ratio_summary <- library_wide %>%
+  group_by(GeneID) %>%
+  summarize(
+    early_ratio = mean(Ratio[hpf_num <= 4], na.rm = TRUE),
+    late_ratio = mean(Ratio[hpf_num >= 48], na.rm = TRUE),
+    overall_ratio = mean(Ratio, na.rm = TRUE),
+    ratio_change = late_ratio - early_ratio,
+    .groups = "drop"
+  )
+ratio_summary <- ratio_summary %>%
+  mutate(
+    Category = case_when(
+      ratio_change < -0.2 & early_ratio > 1 ~ "Drops: Maternal clearance",
+      ratio_change > 0.2 & late_ratio > 1 ~ "Rises: Zygotic activation",
+      overall_ratio < 0.5 ~ "Stays low: Non-polyA",
+      overall_ratio > 1 ~ "Stays high: Stable polyA",
+      TRUE ~ "Other/Unclear"
+    )
+  )
+ratio_summary %>%
+  count(Category) %>%
+  arrange(desc(n))
+```
 
+Probably would be best to rlog for expression patterns and CPM/TPM for ratios
 
 
 
