@@ -86,7 +86,6 @@ dim(TPM_df_1hpf_greater1)
 
 19142 genes were expressed >1 TPM--> the maternal complement. 
 
-
 Now we want to compare the DEs using the TPMs. We already did the differential expression analysis in [this code](https://github.com/JillAshey/DevelopmentalTimeseries/blob/main/scripts/mRNA_DEG.Rmd). 
 
 Read in metadata for downstream analysis
