@@ -1,0 +1,1 @@
+ITS2 type profile UID	Clade	Majority ITS2 sequence	Associated species	ITS2 profile abundance local	ITS2 profile abundance DB	ITS2 type profile	Sequence accession / SymPortal UID	Average defining sequence proportions and [stdev]
