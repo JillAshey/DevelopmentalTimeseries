@@ -1,0 +1,48 @@
+---
+title: "ITS2"
+author: "Jill Ashey"
+date: "2026-09-27"
+output: html_document
+---
+
+ITS2 for Mcap larvae 2023 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("readxl")
+library("phyloseq")
+library("janitor")
+library("writexl")
+library("ggplot2")
+library('cowplot')
+library("janitor")
+library("car")
+library("phyloseq")
+library("stringr")
+library("ape")
+library("DESeq2")
+library("microViz")
+library("vegan")
+library("ComplexHeatmap")
+library("tidyverse")
+library("dplyr")
+library(emmeans)
+library(readxl)
+library(patchwork)
+```
+
+Load metadata
+```{r}
+tube_meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv")
+```
+
+Load ITS2 data 
+```{r}
+getwd()
+taxnames <- read_tsv(file = "../data/ITS2/symportal/20251029T155605_asheyji1/post_med_seqs/its2648_20251112T102302_DBV_20251113T115319.seqs.absolute.abund_only.txt", n_max = 0) %>%
+  dplyr::select(-1) %>%
+  names(.)
+```
+
+
