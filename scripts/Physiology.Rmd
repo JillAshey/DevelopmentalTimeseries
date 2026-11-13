@@ -71,14 +71,14 @@ custom_theme<-theme_classic() +
 Read in datafiles
 
 ```{r}
-protein <- read.csv("../2023/data/Physiology/SolubleProtein_Data.csv")
+protein <- read.csv("../data/Physiology/SolubleProtein_Data.csv")
 
-prot_meta <- read.csv("../2023/data/Physiology/SolubleProtein_Meta.csv")
+prot_meta <- read.csv("../data/Physiology/SolubleProtein_Meta.csv")
 prot_meta <- prot_meta %>%
   mutate(Homo_vol = ifelse(Sample.Type == "Sample", 25, NA)) %>%
   mutate(Resusp_vol = ifelse(Sample.Type == "Sample", 500, NA)) 
 
-meta <- read.csv("../2023/data/sample_metadata/tube_meta.csv")
+meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv")
 ```
 
 ## Prepare dataframes 
