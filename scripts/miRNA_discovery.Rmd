@@ -5,7 +5,7 @@ date: "2024-11-18"
 output: html_document
 ---
 
-I ran mirdeep2 on R1 reads from DT Mcap 2023 experiment. The output was files with novel and known miRNAs. In this code, I filter the results to identify putative miRNAs!
+I ran mirdeep2 on reads from DT Mcap 2023 experiment. The output was files with novel and known miRNAs. In this code, I filter the results to identify putative miRNAs.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -14,231 +14,462 @@ library(tidyverse)
 library(rvest)
 ```
 
-## Semi raw reads 
-NOTE: these miRNAs are from semi-raw reads - I still need to trim adapters from certain reads. 
+## mirdeep2
 
-Load novel miRNAs 
-```{r}
-novel <- read.csv("../data/Molecular/smRNA/mirdeep2/all_novel.csv", header = T)
+The mirdeep2 code was done on Unity.
 
-length(unique(novel$provisional.id)) # 752 unique genomic ids
-length(unique(novel$consensus.mature.sequence)) # 625 unique miRNA sequences
+Make a config file with each line designated as a file location and 3 letter code.
+```{bash}
+# Define the directory path
+DIR="/scratch3/workspace/jillashey_uri_edu-mcap_mirna/trim"
+
+# Create or overwrite config.txt
+> config.txt
+
+# Loop through the matching files
+for filepath in "$DIR"/M*-fastp-adapters-polyG-31bp-merged.fq; do
+    # Skip if no matches found
+    [ -e "$filepath" ] || continue
+    
+    # Get just the filename
+    filename=$(basename "$filepath")
+    
+    # Extract the number after 'M'
+    num=$(echo "$filename" | sed -E 's/^M([0-9]+)-.*/\1/')
+    
+    # Format the 3-letter code (e.g., s6 -> s06, s10 -> s10)
+    code=$(printf "s%02d" "$num")
+    
+    # Append the file path and code to config.txt (tab-separated)
+    echo -e "$filepath\t$code" >> config.txt
+done
 ```
 
-Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
-```{r}
-novel_filt <- novel %>%
-  filter(miRDeep2.score > 10) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(novel_filt$provisional.id))
-length(unique(novel_filt$consensus.mature.sequence))
+Run mapper for mirdeep2.
+```{bash}
+# Load modules 
+module load uri/main Bowtie/1.3.1-GCC-11.3.0
 
-# Save csv 
-#write.csv(novel_filt, "../data/Molecular/smRNA/mirdeep2/novel_filt.csv")
+# Define paths 
+OUT_DIR="/scratch3/workspace/jillashey_uri_edu-mcap_mirna/mirdeep2"
+GENOME="/work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/Montipora_capitata_HIv3.assembly.fasta"
+
+# Create output directories if they don't exist
+mkdir -p "${OUT_DIR}"
+
+echo "Index Mcap genome" $(date)
+
+# Index the reference genome for Mcap 
+bowtie-build "${GENOME}" Mcap_ref.btindex
+
+echo "Referece genome indexed!" $(date)
+echo "Unload unneeded packages and run mapper script for trimmed reads" $(date)
+
+# Load modules
+module load Bowtie/1.3.1-GCC-11.3.0
+module load conda/latest
+conda activate /work/pi_hputnam_uri_edu/conda/envs/mirdeep2 
+
+mapper.pl config.txt -d -e -h -l 18 -v -m -p Mcap_ref.btindex -s "${OUT_DIR}"/mapped_reads.fa -t "${OUT_DIR}"/mapped_reads_vs_genome.arf
+
+echo "Mapping complete!" $(date)
 ```
 
-Load the known miRNAs
-```{r}
-known <- read.csv("../data/Molecular/smRNA/mirdeep2/all_known.csv")
-length(unique(known$tag.id)) # 14 unique genomic ids
-length(unique(known$consensus.mature.sequence)) # 14 unique miRNA sequences
+Edit miRNA reference fasta so there is no white space in headers
+```{bash}
+awk '{if (/^>/) { gsub(/[[:space:]]+/, "-"); } print}' miRNA_reference.fasta > miRNA_reference_fixed.fasta
 ```
 
-Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
-```{r}
-known_filt <- known %>%
-  filter(miRDeep2.score > 0) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(known_filt$tag.id))
-length(unique(known_filt$consensus.mature.sequence))
+Run mirdeep2
+```{bash}
+# Load modules 
+conda activate /work/pi_hputnam_uri_edu/conda/envs/mirdeep2 
 
-# Save csv 
-#write.csv(known_filt, "../data/Molecular/smRNA/mirdeep2/known_filt.csv")
+# Define paths 
+OUT_DIR="/scratch3/workspace/jillashey_uri_edu-mcap_mirna/mirdeep2"
+GENOME="/work/pi_hputnam_uri_edu/HI_Genomes/MCapV3/Montipora_capitata_HIv3.assembly.fasta"
+
+echo "ID miRNAs" $(date)
+
+miRDeep2.pl "${OUT_DIR}"/mapped_reads.fa "${GENOME}" "${OUT_DIR}"/mapped_reads_vs_genome.arf miRNA_reference_fixed.fasta none none -P -g -1 2>report.log
+
+echo "miRNA ID complete" $(date)
 ```
 
-## Reads trimmed to 75bp with flexbar 
+Parse output 
+```{python}
+#!/usr/bin/env python3
+"""
+parse_mcap_miRNAs.py
+Extracts novel and known miRNAs from miRDeep2 CSV and MRD files, calculates
+Praher et al. (2021) criteria (5' consistency, duplex complementarity, numeric 3' overhang in bp),
+adds sequence length columns (bp), and outputs a master TSV ready for R downstream analysis.
+"""
 
-Load novel miRNAs 
-```{r}
-novel_75 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_novel.csv", header = T)
+import sys
+import re
+from collections import Counter
 
-length(unique(novel_75$provisional.id)) # 610 unique genomic ids
-length(unique(novel_75$consensus.mature.sequence)) # 507 unique miRNA sequences
+if len(sys.argv) < 4:
+    print("Usage: python3 parse_mcap_miRNAs.py <result_csv> <mrd_file> <output_tsv>")
+    sys.exit(1)
+
+csv_path = sys.argv[1]
+mrd_path = sys.argv[2]
+out_path = sys.argv[3]
+
+# -------------------------------------------------------------------------
+# 1. Helper Functions
+# -------------------------------------------------------------------------
+
+def calc_complementarity(mat, star):
+    """Calculates maximum complementary base matches between mature and star strands."""
+    if not mat or not star or mat == '-' or star == '-':
+        return 0
+    comp_map = {'a':'u', 'u':'a', 'c':'g', 'g':'c', 'A':'U', 'U':'A', 'C':'G', 'G':'C'}
+    rev_star_comp = "".join([comp_map.get(b, 'N') for b in reversed(star)])
+    
+    max_matches = 0
+    for shift in range(-len(rev_star_comp), len(mat)):
+        matches = sum(1 for i in range(len(mat)) 
+                      if 0 <= i - shift < len(rev_star_comp) 
+                      and mat[i] == rev_star_comp[i - shift])
+        if matches > max_matches:
+            max_matches = matches
+    return max_matches
+
+def calc_3p_overhang(exp_line):
+    """
+    Calculates the 3' overhang length (bp) between 5' and 3' duplex strands
+    from the miRDeep2 exp string (M=Mature, S=Star).
+    """
+    if not exp_line or 'M' not in exp_line or 'S' not in exp_line:
+        return "NA"
+        
+    mat_start, mat_end = exp_line.find('M'), exp_line.rfind('M')
+    star_start, star_end = exp_line.find('S'), exp_line.rfind('S')
+    
+    # Determine which strand is on 5' arm vs 3' arm
+    if mat_start < star_start:
+        arm5_start, arm5_end = mat_start, mat_end
+        arm3_start, arm3_end = star_start, star_end
+    else:
+        arm5_start, arm5_end = star_start, star_end
+        arm3_start, arm3_end = mat_start, mat_end
+        
+    # Calculate 3' overhang offset at duplex terminal ends
+    # Distance from 3' end of 3' arm to 5' end of 5' arm
+    total_len = len(exp_line)
+    overhang_3p = (total_len - arm3_end) - arm5_start
+    
+    # If flank region is not padded, calculate via strand boundary alignment difference
+    if overhang_3p < 0 or overhang_3p > 10:
+        overhang_3p = abs((arm5_end - arm5_start) - (arm3_end - arm3_start))
+        
+    return max(0, overhang_3p)
+
+# -------------------------------------------------------------------------
+# 2. Parse miRDeep2 Summary CSV File (Novel + Known Sections)
+# -------------------------------------------------------------------------
+
+candidates = {}
+
+with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
+    current_section = None
+    
+    for line in f:
+        line_str = line.strip()
+        if not line_str:
+            continue
+            
+        if 'novel miRNAs predicted by miRDeep2' in line_str:
+            current_section = 'novel'
+            continue
+        elif 'mature miRBase miRNAs detected by miRDeep2' in line_str:
+            current_section = 'known'
+            continue
+            
+        parts = line_str.split('\t')
+        
+        if parts[0] in ['provisional id', 'tag id']:
+            continue
+            
+        if current_section in ['novel', 'known'] and len(parts) >= 16:
+            mirna_id = parts[0]
+            try:
+                score = float(parts[1])
+            except ValueError:
+                continue
+                
+            rfam = parts[3]
+            tot_reads = parts[4]
+            mat_reads = parts[5]
+            loop_reads = parts[6]
+            star_reads = parts[7]
+            randfold_p = parts[8]
+            known_name = parts[9]
+            mat_seq = parts[13]
+            star_seq = parts[14]
+            prec_seq = parts[15]
+            
+            candidates[mirna_id] = {
+                'mirna_id': mirna_id,
+                'category': current_section,
+                'mirdeep2_score': score,
+                'rfam_alert': rfam,
+                'total_read_count': tot_reads,
+                'mature_read_count': mat_reads,
+                'loop_read_count': loop_reads,
+                'star_read_count': star_reads,
+                'randfold_pvalue': randfold_p,
+                'known_mirbase_name': known_name if known_name != '-' else 'NA',
+                'consensus_mature_seq': mat_seq,
+                'mature_len_bp': len(mat_seq) if mat_seq and mat_seq != '-' else 0,
+                'consensus_star_seq': star_seq,
+                'star_len_bp': len(star_seq) if star_seq and star_seq != '-' else 0,
+                'consensus_precursor_seq': prec_seq,
+                'precursor_len_bp': len(prec_seq) if prec_seq and prec_seq != '-' else 0,
+                'comp_bp': calc_complementarity(mat_seq, star_seq)
+            }
+
+print(f"Loaded {len(candidates)} total entries from {csv_path} (Novel & Known).")
+
+# -------------------------------------------------------------------------
+# 3. Parse MRD File for 5' Consistency and Numeric 3' Overhang (bp)
+# -------------------------------------------------------------------------
+
+mrd_stats = {}
+
+with open(mrd_path, 'r', encoding='utf-8', errors='ignore') as f:
+    current_id = None
+    in_block = False
+    reads = []
+    exp_line = ""
+    
+    for line in f:
+        line_str = line.rstrip('\r\n')
+        
+        if line_str.startswith('>'):
+            if current_id in candidates:
+                pos_counts = Counter()
+                total_mapped = 0
+                for start_pos, count in reads:
+                    pos_counts[start_pos] += count
+                    total_mapped += count
+                
+                pct_5p = (pos_counts.most_common(1)[0][1] / total_mapped * 100) if total_mapped > 0 else 0.0
+                overhang_3p_bp = calc_3p_overhang(exp_line)
+                
+                mrd_stats[current_id] = {
+                    'pct_5p_consistency': pct_5p,
+                    'mapped_read_count': total_mapped,
+                    'overhang_3p_bp': overhang_3p_bp
+                }
+            
+            current_id = line_str[1:].split()[0]
+            reads = []
+            exp_line = ""
+            in_block = current_id in candidates
+            continue
+            
+        if in_block:
+            if line_str.startswith('exp'):
+                parts = line_str.split()
+                exp_line = parts[-1] if len(parts) > 1 else ""
+                
+            parts = line_str.split()
+            if len(parts) >= 2 and parts[0].startswith('s'):
+                read_id = parts[0]
+                count_match = re.search(r'_x(\d+)$', read_id)
+                count = int(count_match.group(1)) if count_match else 1
+                
+                seq_match = re.search(r'[a-zA-Z\-]', line_str[len(read_id):])
+                if seq_match:
+                    start_pos = len(read_id) + seq_match.start()
+                    reads.append((start_pos, count))
+
+# Process final candidate block
+if current_id in candidates:
+    pos_counts = Counter()
+    total_mapped = 0
+    for start_pos, count in reads:
+        pos_counts[start_pos] += count
+        total_mapped += count
+    pct_5p = (pos_counts.most_common(1)[0][1] / total_mapped * 100) if total_mapped > 0 else 0.0
+    overhang_3p_bp = calc_3p_overhang(exp_line)
+    
+    mrd_stats[current_id] = {
+        'pct_5p_consistency': pct_5p,
+        'mapped_read_count': total_mapped,
+        'overhang_3p_bp': overhang_3p_bp
+    }
+
+# -------------------------------------------------------------------------
+# 4. Output Master Annotated Table
+# -------------------------------------------------------------------------
+
+headers = [
+    "mirna_id",
+    "category",
+    "known_mirbase_name",
+    "mirdeep2_score",
+    "mature_read_count",
+    "star_read_count",
+    "total_read_count",
+    "significant_randfold_pvalue",
+    "rfam_alert",
+    "consensus_mature_seq",
+    "mature_len_bp",
+    "consensus_star_seq",
+    "star_len_bp",
+    "consensus_precursor_seq",
+    "precursor_len_bp",
+    "comp_bp",
+    "pct_5p_consistency",
+    "overhang_3p_bp",
+    "passes_praher_strict"
+]
+
+with open(out_path, 'w') as out:
+    out.write("\t".join(headers) + "\n")
+    
+    for cid, info in candidates.items():
+        m_stats = mrd_stats.get(cid, {'pct_5p_consistency': 0.0, 'overhang_3p_bp': 'NA'})
+        pct_5p = m_stats['pct_5p_consistency']
+        overhang_bp = m_stats['overhang_3p_bp']
+        
+        passes_strict = "YES" if (info['mirdeep2_score'] >= 10.0 and info['comp_bp'] >= 16 and pct_5p >= 90.0) else "NO"
+        
+        row = [
+            info['mirna_id'],
+            info['category'],
+            info['known_mirbase_name'],
+            str(info['mirdeep2_score']),
+            str(info['mature_read_count']),
+            str(info['star_read_count']),
+            str(info['total_read_count']),
+            info['randfold_pvalue'],
+            info['rfam_alert'],
+            info['consensus_mature_seq'],
+            str(info['mature_len_bp']),
+            info['consensus_star_seq'],
+            str(info['star_len_bp']),
+            info['consensus_precursor_seq'],
+            str(info['precursor_len_bp']),
+            str(info['comp_bp']),
+            f"{pct_5p:.2f}",
+            str(overhang_bp),
+            passes_strict
+        ]
+        out.write("\t".join(row) + "\n")
+
+print(f"Master dataset containing all {len(candidates)} miRNAs written to: {out_path}")
+
+python3 parse_mcap_miRNAs.py ../../result_03_11_2026_t_01_56_18.csv output.mrd mcap_miRNA_master_dataset.tsv
 ```
 
-Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
-```{r}
-novel_75_filt <- novel_75 %>%
-  filter(miRDeep2.score > 10) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(novel_75_filt$provisional.id))
-length(unique(novel_75_filt$consensus.mature.sequence))
+## ID putative miRNAs
 
-# Save csv 
-#write.csv(novel_75_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_novel_filt.csv")
+Read in master miRNA dataset
+```{r}
+mirna_df <- read_tsv("../data/Molecular/miRNA_mirdeep2/mcap_miRNA_master_dataset.tsv")
 ```
 
-Load the known miRNAs
+Filter based on the following:
+- mirdeep2 score of 10 or above 
+- No rfam alert 
+- Significant randfold pvalue
+- Consistent 5' end position
+- At least 2-bp 3' overhang
+- Minumum of 10 mature reads 
+- 16 bp complementarity between mature and star strand 
+
 ```{r}
-known_75 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_known.csv", header = T)
-length(unique(known_75$tag.id)) # 11 unique genomic ids
-length(unique(known_75$consensus.mature.sequence)) # 11 unique miRNA sequences
+mirna_df_filt <- mirna_df %>%
+  filter(mirdeep2_score >= 10,
+         !rfam_alert == "rRNA",
+         significant_randfold_pvalue == "yes",
+         pct_5p_consistency >=50,
+         #overhang_3p_bp >= 2,
+         mature_read_count >= 10,
+         comp_bp >= 15)
+
+nrow(mirna_df_filt)
+length(unique(mirna_df_filt$consensus_mature_seq))
+length(unique(mirna_df_filt$consensus_star_seq))
+length(unique(mirna_df_filt$consensus_precursor_seq))
+
+write.csv(mirna_df_filt, "../output/Molecular/miRNA/mature_miRNAs_intermediate.csv")
 ```
 
-Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
-```{r}
-known_75_filt <- known_75 %>%
-  filter(miRDeep2.score > 0) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(known_75_filt$tag.id))
-length(unique(known_75_filt$consensus.mature.sequence))
+The 3' overhang did not calculate correctly, going to double check these against the PDF outputs of the miRNAs from mirdeep2. Went through them all and saved as csv named `mature_miRNAs_intermediate_3p.csv`.
 
-# Save csv 
-#write.csv(known_75_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_75bp/flexbar_75bp_known_filt.csv")
+Read in updated intermediate data
+```{r}
+mirna_df_filt <- read.csv("../output/Molecular/miRNA/mature_miRNAs_intermediate_3p.csv")
 ```
 
-## Reads trimmed to 35bp with flexbar 
-
-Load novel miRNAs 
+Filter for >2 bp overhang only 
 ```{r}
-novel_35 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_novel.csv", header = T)
-
-length(unique(novel_35$provisional.id)) # 592 unique genomic ids
-length(unique(novel_35$consensus.mature.sequence)) # 497 unique miRNA sequences
+mirna_df_filt <- mirna_df_filt %>%
+  filter(overhang_3p_bp >= 2)
+nrow(mirna_df_filt)
+length(unique(mirna_df_filt$consensus_mature_seq))
+length(unique(mirna_df_filt$consensus_star_seq))
+length(unique(mirna_df_filt$consensus_precursor_seq))
 ```
 
-Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
+Collapse to mature sequences 
 ```{r}
-novel_35_filt <- novel_35 %>%
-  filter(miRDeep2.score > 10) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(novel_35_filt$provisional.id))
-length(unique(novel_35_filt$consensus.mature.sequence))
+final_mature_miRNAs <- mirna_df_filt %>%
+  group_by(consensus_mature_seq) %>%
+  summarize(
+    num_loci = n(),
+    genomic_loci = paste(mirna_id, collapse = "; "),
+    category = first(na.omit(category)),
+    known_name = first(na.omit(known_mirbase_name)),
+    mean_score = mean(mirdeep2_score),
+    total_mature_reads = sum(mature_read_count),
+    consensus_star_seq = first(consensus_star_seq),
+    consensus_precursor_seq = first(consensus_precursor_seq),
+    comp_bp = max(comp_bp),
+    pct_5p_consistency = max(pct_5p_consistency),
+    overhang_3p_bp = max(overhang_3p_bp),
+    .groups = "drop"
+  )
 
-# Save csv 
-write.csv(novel_35_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_novel_filt.csv")
+# Deduplicate exact precursor locus duplicates
+final_precursor_miRNAs <- mirna_df_filt %>%
+  distinct(consensus_precursor_seq, .keep_all = TRUE)
+nrow(final_precursor_miRNAs)
 ```
 
-Load the known miRNAs
+Rename miRNAs
 ```{r}
-known_35 <- read.csv("../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_known.csv", header = T)
-length(unique(known_35$tag.id)) # 10 unique genomic ids
-length(unique(known_35$consensus.mature.sequence)) # 10 unique miRNA sequences
+# Create naming col
+final_mature_miRNAs <- final_mature_miRNAs %>%
+  mutate(mirna_name = NA_character_)
+
+# Assign names for miRNAs
+final_mature_miRNAs <- final_mature_miRNAs %>%
+  mutate(
+    mirna_name = case_when(
+      category == "novel" ~ paste0("mcap-mir-novel-", cumsum(category == "novel")),
+      str_detect(known_name, "mir-temp-14") ~ "spis-mir-14",
+      str_detect(known_name, "Cluster_8887") ~ "peve-mir-novel-21",
+      str_detect(known_name, "Cluster_14999") ~ "mir-2025",
+      str_detect(known_name, "miRNA_100") ~ "mir-100",
+      str_detect(known_name, "Acerv_scaffold_151_44408") ~ "Acerv_scaffold_151_44408",
+      str_detect(known_name, "miR-2030") ~ "mir-2030",
+      str_detect(known_name, "miRNA_2022") ~ "mir-2022",
+      str_detect(known_name, "temp-2037") ~ "mir-2037",
+      str_detect(known_name, "miRNA_19") ~ "avi-ami-miR-P-novel-19",
+      TRUE ~ NA_character_))
 ```
 
-Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
+Save as csvs
 ```{r}
-known_35_filt <- known_35 %>%
-  filter(miRDeep2.score > 0) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(known_35_filt$tag.id))
-length(unique(known_35_filt$consensus.mature.sequence))
-
-# Save csv 
-write.csv(known_35_filt, "../output/Molecular/smRNA/mirdeep2/flexbar_35bp/flexbar_35bp_known_filt.csv")
-```
-
-## Trim stringent (cutadapt) first batch novel and known miRNAs 
-
-Load novel miRNAs 
-```{r}
-novel <- read.csv("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel.csv", header = T)
-
-length(unique(novel$provisional.id)) # 659 unique genomic ids
-length(unique(novel$consensus.mature.sequence)) # 554 unique miRNA sequences
-```
-
-Filter so that mirdeep2 score >10, no rfam info, at least 10 reads in mature and star read count, and significant randfold p-value. 
-```{r}
-novel_filt <- novel %>%
-  filter(miRDeep2.score > 10) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(novel_filt$provisional.id))
-length(unique(novel_filt$consensus.mature.sequence))
-length(unique(novel_filt$consensus.star.sequence))
-length(unique(novel_filt$consensus.precursor.sequence))
-
-# Save csv 
-#write.csv(novel_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_novel_filt.csv")
-```
-There are 50 novel miRNAs idenfitied but there are 41 unique mature miRNA sequences, which means we either have repeated sequences that are close to one another in the genome OR we have repeated sequences that have unique locations in the genome. I think I also need to look at the pdfs of the miRNAs to determine which ones are putative. 
-
-Look at the repeated sequences 
-```{r}
-# Count occurrences of each unique mature sequence
-sequence_counts <- table(novel_filt$consensus.mature.sequence)
-
-# Find sequences that appear more than once
-repeated_sequences <- sequence_counts[sequence_counts > 1]
-
-# Display the repeated sequences and their counts
-print(repeated_sequences)
-
-# Find the rows with repeated sequences
-repeated_rows <- novel_filt[novel_filt$consensus.mature.sequence %in% names(repeated_sequences), ]
-
-# Display the rows with repeated sequences
-print(repeated_rows)
-```
-
-`Montipora_capitata_HIv3___Scaffold_14_1001044` and `Montipora_capitata_HIv3___Scaffold_14_1001054` has the same mirdeep2 score and same mature read count, which makes me suspect that there is just one miRNA. Look at the pdfs of each identified miRNA (pdfs located [here](https://github.com/JillAshey/DevelopmentalTimeseries/tree/main/output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/pdfs_19_02_2025_t_14_06_12)). Looking at both pdfs, they look the exact same...I think these are technically the same. I will remove `Montipora_capitata_HIv3___Scaffold_14_1001054` from the miRNAs. 
-
-`Montipora_capitata_HIv3___Scaffold_9_581562` and `Montipora_capitata_HIv3___Scaffold_10_624116` have the same sequence but are on totally different chromosomes. The mature sequences look the same but the star sequences are slightly different. I feel comfortable saying these are different miRNAs. 
-
-
-
-
-
-
-
-Load the known miRNAs
-```{r}
-known <- read.csv("../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_known.csv", header = T)
-length(unique(known$tag.id)) # 15 unique genomic ids
-length(unique(known$consensus.mature.sequence)) # 15 unique miRNA sequences
-```
-
-Because we can see some mapping to known miRNAs in cnidarians, I'm going to filter so that mirdeep2 score >0, no rfam info, at least 10 reads in mature read count, and significant ranfold p-value
-```{r}
-known_filt <- known %>%
-  filter(miRDeep2.score > 0) %>%
-  filter(rfam.alert == "-") %>%
-  filter(mature.read.count > 10) %>%
-  #filter(star.read.count >10) %>%
-  filter(significant.randfold.p.value == "yes") #%>%
-  #na.omit()
-length(unique(known_filt$tag.id))
-length(unique(known_filt$consensus.mature.sequence))
-
-# Save csv 
-write.csv(known_filt, "../output/Molecular/smRNA/mirdeep2/trim_stringent_first_batch/trim_stringent_first_batch_known_filt.csv")
+write.csv(final_mature_miRNAs, "../output/Molecular/miRNA/final_mature_miRNAs.csv")
+write.csv(final_precursor_miRNAs, "../output/Molecular/miRNA/final_precursor_miRNAs.csv")
 ```
 
