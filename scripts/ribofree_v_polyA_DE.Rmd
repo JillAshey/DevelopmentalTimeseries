@@ -15,14 +15,416 @@ library(limma)
 library(genefilter)
 library(DESeq2)
 library(pheatmap)
-
-if (!requireNamespace("TCseq", quietly = TRUE)) {
-  BiocManager::install("TCseq")
-}
-
 library(TCseq)
 library(topGO)
 ```
+
+Read in rRNA depleted gene counts
+```{r}
+counts_rRNA <- read.csv("../data/Molecular/mRNA/Mcap_gene_count_matrix.csv", check.names = FALSE)
+
+# Make gene ID the row names
+rownames(counts_rRNA) <- counts_rRNA$gene_id
+counts_rRNA <- as.matrix(counts_rRNA[, -1])
+
+# Extract TubeIDs from count matrix column names
+colnames(counts_rRNA) <- gsub("^X", "M", sub("_.*", "", colnames(counts_rRNA))) # remove extra info from col name
+colnames(counts_rRNA) <- paste0("M", colnames(counts_rRNA))
+```
+
+Read in polyA gene counts
+```{r}
+counts_polyA <- read.csv("../data/Molecular/mRNA_polyA/Mcap_polyA_gene_count_matrix.csv", check.names = FALSE)
+
+# Make gene ID the row names
+rownames(counts_polyA) <- counts_polyA$gene_id
+counts_polyA <- as.matrix(counts_polyA[, -1])
+
+# Extract TubeIDs from count matrix column names
+colnames(counts_polyA) <- gsub(".bam.gtf", "", colnames(counts_polyA))
+```
+
+Read in tube metadata
+```{r}
+sample_meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv")
+
+# Filter based on molecular samples from counts matrices
+sample_ids <- colnames(counts_polyA) # should be same in polyA and rRNA depleted
+sample_meta <- sample_meta %>%
+  filter(TubeID %in% sample_ids) %>%
+  dplyr::select(TubeID, hpf)
+
+# Align sample order to metadata
+sample_meta$hpf <- factor(sample_meta$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+sample_meta <- sample_meta[match(colnames(counts_polyA), sample_meta$TubeID), ]
+```
+
+Set up DESeq2 object
+```{r}
+dds_polyA <- DESeqDataSetFromMatrix(countData = counts_polyA, colData = sample_meta, design = ~ hpf)
+dds_rRNA  <- DESeqDataSetFromMatrix(countData = counts_rRNA,  colData = sample_meta, design = ~ hpf)
+```
+
+Filter low count genes
+```{r}
+dds_polyA <- dds_polyA[rowSums(counts(dds_polyA)) >= 10, ]
+dds_rRNA  <- dds_rRNA[rowSums(counts(dds_rRNA)) >= 10, ]
+```
+
+Run DESeq2
+```{r}
+dds_polyA <- DESeq(dds_polyA)
+dds_rRNA  <- DESeq(dds_rRNA)
+```
+
+Extract normalized counts
+```{r}
+norm_polyA <- as.data.frame(counts(dds_polyA, normalized=TRUE))
+norm_rRNA  <- as.data.frame(counts(dds_rRNA, normalized=TRUE))
+```
+
+Compute LFC relative to 1hpf 
+```{r}
+get_lfc_matrix <- function(dds) {
+  res_list <- list()
+  timepoints <- c("4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf")
+  for(tp in timepoints) {
+    res <- results(dds, contrast=c("hpf", tp, "1 hpf"))
+    res_list[[tp]] <- res$log2FoldChange
+  }
+  lfc_df <- as.data.frame(res_list)
+  rownames(lfc_df) <- rownames(dds)
+  return(lfc_df)
+}
+
+lfc_polyA <- get_lfc_matrix(dds_polyA)
+lfc_rRNA  <- get_lfc_matrix(dds_rRNA)
+```
+
+Classify Readenylation and Deadenylation Dynamics
+```{r}
+# Compare 4 hpf vs 1 hpf results
+res_4hpf_polyA <- results(dds_polyA, contrast=c("hpf", "4 hpf", "1 hpf"))
+res_4hpf_rRNA  <- results(dds_rRNA,  contrast=c("hpf", "4 hpf", "1 hpf"))
+
+# Find common genes across both datasets
+common_genes <- intersect(rownames(res_4hpf_polyA), rownames(res_4hpf_rRNA))
+
+df_4hpf <- data.frame(
+  gene = common_genes,
+  lfc_polyA = res_4hpf_polyA[common_genes, "log2FoldChange"],
+  padj_polyA = res_4hpf_polyA[common_genes, "padj"],
+  lfc_rRNA  = res_4hpf_rRNA[common_genes, "log2FoldChange"],
+  padj_rRNA  = res_4hpf_rRNA[common_genes, "padj"]
+)
+
+# Categorize genes at 4 hpf
+df_4hpf <- df_4hpf %>%
+  mutate(category = case_when(
+    lfc_polyA > 1 & padj_polyA < 0.05 & (is.na(padj_rRNA) | padj_rRNA > 0.05 | abs(lfc_rRNA) < 0.5) ~ "Readenylation",
+    lfc_polyA < -1 & padj_polyA < 0.05 & (is.na(padj_rRNA) | padj_rRNA > 0.05 | lfc_rRNA > -0.5)   ~ "Deadenylation",
+    lfc_rRNA > 1 & padj_rRNA < 0.05 ~ "Zygotic Activation",
+    lfc_rRNA < -1 & padj_rRNA < 0.05 ~ "Maternal Clearance (Degradation)",
+    TRUE ~ "Stable / Unchanged"
+  ))
+
+table(df_4hpf$category)
+
+ggplot(df_4hpf, aes(x = lfc_rRNA, y = lfc_polyA, color = category)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = c(
+    "Readenylation" = "orange",
+    "Deadenylation" = "purple",
+    "Zygotic Activation" = "firebrick",
+    "Maternal Clearance (Degradation)" = "dodgerblue",
+    "Stable / Unchanged" = "lightgrey"
+  )) +
+  labs(
+    x = "rRNA-depleted Log2 Fold Change (4 hpf vs 1 hpf)",
+    y = "Poly(A)+ Log2 Fold Change (4 hpf vs 1 hpf)",
+    title = "M. capitata MZT Polyadenylation & Deadenylation (4 hpf vs 1 hpf)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+library(DESeq2)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+
+# 1. Extract log2 fold-change matrices across all time points relative to 1 hpf baseline
+timepoints_diff <- c("4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf")
+
+get_full_lfc_df <- function(dds) {
+  df_lfc <- data.frame(row.names = rownames(dds))
+  # 1 hpf baseline is LFC = 0
+  df_lfc[["1 hpf"]] <- 0
+  
+  for(tp in timepoints_diff) {
+    res <- results(dds, contrast=c("hpf", tp, "1 hpf"))
+    df_lfc[[tp]] <- res$log2FoldChange
+  }
+  return(df_lfc)
+}
+
+full_lfc_polyA <- get_full_lfc_df(dds_polyA)
+full_lfc_rRNA  <- get_full_lfc_df(dds_rRNA)
+
+# 2. Reshape and join LFC values with the df_4hpf categories
+lfc_polyA_long <- full_lfc_polyA %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "hpf", values_to = "lfc_polyA")
+
+lfc_rRNA_long <- full_lfc_rRNA %>%
+  rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "hpf", values_to = "lfc_rRNA")
+
+trajectory_data <- df_4hpf %>%
+  dplyr::select(gene, category) %>%
+  filter(category != "Stable / Unchanged") %>%
+  inner_join(lfc_polyA_long, by = "gene") %>%
+  inner_join(lfc_rRNA_long, by = c("gene", "hpf"))
+
+# Preserve correct chronological order on the x-axis
+trajectory_data$hpf <- factor(trajectory_data$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf"))
+
+# 3. Summarize mean LFC per category and library type
+summary_trajectories <- trajectory_data %>%
+  group_by(category, hpf) %>%
+  summarise(
+    `Poly(A)+` = mean(lfc_polyA, na.rm = TRUE),
+    `rRNA-depleted` = mean(lfc_rRNA, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(`Poly(A)+`, `rRNA-depleted`), names_to = "Library", values_to = "mean_LFC")
+
+# 4. Plot longitudinal trajectories
+ggplot(summary_trajectories, aes(x = hpf, y = mean_LFC, color = category, group = interaction(category, Library), linetype = Library)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = c(
+    "Readenylation" = "#E69F00",
+    "Deadenylation" = "#999999", # or "purple"
+    "Zygotic Activation" = "#D55E00",
+    "Maternal Clearance (Degradation)" = "#0072B2"
+  )) +
+  labs(
+    x = "Hours Post Fertilization (hpf)",
+    y = "Mean Log2 Fold Change (vs 1 hpf)",
+    title = "M. capitata MZT Developmental Trajectories Across Library Types",
+    subtitle = "Poly(A)+ (tail length + abundance) vs. rRNA-depleted (total abundance)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+ggplot(summary_trajectories, aes(x = hpf, y = mean_LFC, color = category, group = category)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  facet_wrap(~ Library, ncol = 2) +  # Side-by-side panels
+  scale_color_manual(values = c(
+    "Readenylation" = "#E69F00",
+    "Deadenylation" = "#999999",
+    "Zygotic Activation" = "#D55E00",
+    "Maternal Clearance (Degradation)" = "#0072B2"
+  )) +
+  labs(
+    x = "Hours Post Fertilization (hpf)",
+    y = "Mean Log2 Fold Change (vs 1 hpf)",
+    title = "M. capitata MZT Trajectories Split by Library Strategy"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Track longitudinal profiles
+```{r}
+# 1. Define all developmental time points
+tps <- c("4 hpf", "9 hpf", "14 hpf", "22 hpf", "28 hpf", "48 hpf", "72 hpf")
+
+# Extract LFC matrices relative to 1 hpf baseline for both datasets
+get_lfc_df <- function(dds) {
+  df <- data.frame(row.names = rownames(dds))
+  for(tp in tps) {
+    res <- results(dds, contrast = c("hpf", tp, "1 hpf"))
+    df[[tp]] <- res$log2FoldChange
+  }
+  return(df)
+}
+
+lfc_polyA_df <- get_lfc_df(dds_polyA)
+lfc_rRNA_df  <- get_lfc_df(dds_rRNA)
+
+# Extract padj matrices
+get_padj_df <- function(dds) {
+  df <- data.frame(row.names = rownames(dds))
+  for(tp in tps) {
+    res <- results(dds, contrast = c("hpf", tp, "1 hpf"))
+    df[[tp]] <- res$padj
+  }
+  return(df)
+}
+
+padj_polyA_df <- get_padj_df(dds_polyA)
+padj_rRNA_df  <- get_padj_df(dds_rRNA)
+
+# 2. Classify full developmental profile for each gene
+common_genes <- intersect(rownames(lfc_polyA_df), rownames(lfc_rRNA_df))
+
+gene_profiles <- data.frame(gene = common_genes, stringsAsFactors = FALSE)
+
+classify_gene_lifecycle_corrected <- function(gene_name) {
+  polyA_lfcs  <- as.numeric(lfc_polyA_df[gene_name, ])
+  rRNA_lfcs   <- as.numeric(lfc_rRNA_df[gene_name, ])
+  rRNA_padjs  <- as.numeric(padj_rRNA_df[gene_name, ])
+  polyA_padjs <- as.numeric(padj_polyA_df[gene_name, ])
+  
+  # Minimum rRNA LFC in early stage (4, 9, 14 hpf)
+  min_early_rRNA <- min(rRNA_lfcs[1:3], na.rm = TRUE)
+  
+  # Check if cleared at early stage
+  cleared_early_rRNA  <- any(rRNA_lfcs[1:3] <= -1.0 & !is.na(rRNA_padjs[1:3]) & rRNA_padjs[1:3] < 0.05)
+  cleared_early_polyA <- any(polyA_lfcs[1:3] <= -1.0 & !is.na(polyA_padjs[1:3]) & polyA_padjs[1:3] < 0.05)
+  
+  # Check if re-expressed at late stage RELATIVE TO THE CLEARED NADIR (>= 1.5 LFC gain from min early)
+  max_late_rRNA <- max(rRNA_lfcs[4:7], na.rm = TRUE)
+  reexpressed_from_nadir <- (max_late_rRNA - min_early_rRNA) >= 1.5
+  
+  # Logic decision
+  if((cleared_early_rRNA | cleared_early_polyA) & reexpressed_from_nadir) {
+    return("Cleared Early -> Zygotic Re-expression")
+  } else if(cleared_early_rRNA & !reexpressed_from_nadir) {
+    return("Permanent Maternal Clearance")
+  } else if(cleared_early_polyA & !cleared_early_rRNA & !reexpressed_from_nadir) {
+    return("Persistent Deadenylation (Silent)")
+  } else if(any(rRNA_lfcs >= 1.0 & !is.na(rRNA_padjs) & rRNA_padjs < 0.05)) {
+    return("Zygotic Activation Only")
+  } else {
+    return("Stable / Unchanged")
+  }
+}
+
+gene_profiles$longitudinal_profile <- sapply(common_genes, classify_gene_lifecycle_corrected)
+table(gene_profiles$longitudinal_profile)
+
+# Reshape for ggplot
+lfc_polyA_long <- lfc_polyA_df %>%
+  tibble::rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "hpf", values_to = "lfc_polyA")
+
+lfc_rRNA_long <- lfc_rRNA_df %>%
+  tibble::rownames_to_column("gene") %>%
+  pivot_longer(-gene, names_to = "hpf", values_to = "lfc_rRNA")
+
+# Combine with baseline (1 hpf = 0)
+baseline_data <- data.frame(gene = rep(common_genes, 2), hpf = "1 hpf", lfc_polyA = 0, lfc_rRNA = 0)
+
+longitudinal_plot_data <- gene_profiles %>%
+  inner_join(lfc_polyA_long, by = "gene") %>%
+  inner_join(lfc_rRNA_long, by = c("gene", "hpf")) %>%
+  bind_rows(baseline_data)
+
+longitudinal_plot_data$hpf <- factor(longitudinal_plot_data$hpf, levels = c("1 hpf", tps))
+
+# Summarize mean LFC
+summary_longitudinal <- longitudinal_plot_data %>%
+  filter(longitudinal_profile != "Stable / Unchanged") %>%
+  group_by(longitudinal_profile, hpf) %>%
+  summarise(
+    `Poly(A)+` = mean(lfc_polyA, na.rm = TRUE),
+    `rRNA-depleted` = mean(lfc_rRNA, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(`Poly(A)+`, `rRNA-depleted`), names_to = "Library", values_to = "mean_LFC")
+
+# Plot trajectories
+ggplot(summary_longitudinal, aes(x = hpf, y = mean_LFC, color = longitudinal_profile, group = interaction(longitudinal_profile, Library), linetype = Library)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = c(
+    "Cleared Early -> Zygotic Re-expression" = "purple",
+    "Permanent Maternal Clearance"           = "dodgerblue",
+    "Persistent Deadenylation (Silent)"      = "grey40",
+    "Zygotic Activation Only"                = "firebrick"
+  )) +
+  labs(
+    x = "Hours Post Fertilization (hpf)",
+    y = "Mean Log2 Fold Change (vs 1 hpf)",
+    title = "M. capitata Longitudinal Gene Lifecycles Across Development",
+    color = "Gene Lifecycle Profile"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Look at individual lines
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Filter longitudinal_plot_data to 9 hpf and exclude Stable / Unchanged
+plot_9hpf <- longitudinal_plot_data %>%
+  filter(hpf == "9 hpf", longitudinal_profile != "Stable / Unchanged") %>%
+  pivot_longer(
+    cols = c(lfc_polyA, lfc_rRNA),
+    names_to = "Library_raw",
+    values_to = "LFC"
+  ) %>%
+  mutate(
+    Library = ifelse(Library_raw == "lfc_polyA", "Poly(A)+", "rRNA-depleted")
+  )
+
+# Boxplot + violin plot at 9 hpf
+ggplot(plot_9hpf, aes(x = longitudinal_profile, y = LFC, fill = Library)) +
+  geom_violin(position = position_dodge(width = 0.8), alpha = 0.35, trim = TRUE) +
+  geom_boxplot(position = position_dodge(width = 0.8), width = 0.25, outlier.size = 0.7, alpha = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_fill_manual(values = c("Poly(A)+" = "#E69F00", "rRNA-depleted" = "#56B4E9")) +
+  labs(
+    x = "Gene Lifecycle Profile",
+    y = "Log2 Fold Change at 9 hpf (vs. 1 hpf)",
+    title = "Distribution of Individual Gene LFCs at 9 hpf",
+    subtitle = "Comparing Poly(A)+ and rRNA-depleted spread across lifecycle groups"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    legend.position = "top"
+  )
+```
+
+Look at annots?
+```{r}
+annot <- read.delim("../data/Molecular/Montipora_capitata_HIv3_Swissprot_GO.tsv")
+
+annot_gene <- annot %>%
+  full_join(counts_rRNA, by = c("query" = "Mgene"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## OLD below
 
 ```{r}
 # Import count matrices

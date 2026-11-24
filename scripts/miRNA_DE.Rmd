@@ -34,58 +34,28 @@ library(gridExtra)
 library(grid)
 ```
 
-As of 12/7/24, I am still working through some trimming issues but I ran the mirdeep2 pipeline on some preliminary trimmed reads. Only samples that were sequenced from the first batch got counts successfully. I am going to replicate the samples that worked so I can run the DE analysis. I will later come back with the correctly trimmed reads and redo. 
-
 Load counts data
 ```{r}
-counts <- read.delim("../output/Molecular/smRNA/mirdeep2/miRNAs_expressed_all_samples_1733514422.csv", header = T)
+counts <- read.delim("../output/Molecular/miRNA/miRNAs_expressed_all_samples_1794889168.csv", header = T)
 counts <- as.data.frame(counts)
 ```
 
-Select specific columns for analysis. 
+Select normalized counts for analysis. 
 ```{r}
-counts <- counts %>%
-  dplyr::select(X.miRNA, s09.norm., s13.norm., s23.norm., s35.norm., s52.norm., s60.norm., s72.norm., s85.norm.)
-```
+norm_counts <- counts %>%
+  dplyr::select(X.miRNA, ends_with(".norm.")) %>%
+  rename_with(~ .x %>%
+      str_remove("\\.norm\\.") %>%     
+      str_replace("^s0?", "M"), ends_with(".norm."))
 
-Replicate columns
-```{r}
-counts_new <- counts %>%
-  mutate(s09rep1 = s09.norm. + 10) %>%
-  mutate(s09rep2 = s09.norm. + 20) %>%
-  mutate(s09rep4 = s09.norm. + 5) %>%
-  mutate(s13rep1 = s13.norm. + 10) %>%
-  mutate(s13rep2 = s13.norm. + 20) %>%
-  mutate(s13rep3 = s13.norm. + 5) %>%
-  mutate(s23rep1 = s23.norm. + 10) %>%
-  mutate(s23rep2 = s23.norm. + 20) %>%
-  mutate(s23rep3 = s23.norm. + 5) %>%
-  mutate(s35rep1 = s35.norm. + 10) %>%
-  mutate(s35rep2 = s35.norm. + 20) %>%
-  mutate(s35rep3 = s35.norm. + 5) %>%
-  mutate(s52rep1 = s35.norm. + 10) %>%
-  mutate(s52rep2 = s52.norm. + 20) %>%
-  mutate(s52rep3 = s52.norm. + 5) %>%
-  mutate(s60rep1 = s60.norm. + 10) %>%
-  mutate(s60rep2 = s60.norm. + 20) %>%
-  mutate(s60rep3 = s60.norm. + 5) %>%
-  mutate(s72rep1 = s72.norm. + 10) %>%
-  mutate(s72rep2 = s72.norm. + 20) %>%
-  mutate(s72rep3 = s72.norm. + 5) %>%
-  mutate(s85rep1 = s85.norm. + 10) %>%
-  mutate(s85rep2 = s85.norm. + 20) %>%
-  mutate(s85rep3 = s85.norm. + 5)
-
-# Rename cols to match metadata 
-colnames(counts_new) <- c("miRNA", "M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85", "M6", "M7", "M8", "M10", "M11", "M14", "M24", "M26", "M28", "M36", "M37", "M39", "M47", "M48", "M51", "M61", "M62", "M63", "M73", "M74", "M75", "M86", "M87", "M88")
-
-counts_new <- unique(counts_new)
+# Save as csv 
+write.csv(norm_counts, "../output/Molecular/miRNA/miRNAs_expressed_normalized.csv")
 ```
 
 Make miRNA col the row names
 ```{r}
-rownames(counts_new) <- make.names(counts_new[,1], unique = TRUE)
-counts_new <- counts_new[,-1]
+rownames(norm_counts) <- make.names(norm_counts[,1], unique = TRUE)
+norm_counts <- norm_counts[,-1]
 ```
 
 Read in metadata 
@@ -96,16 +66,16 @@ meta <- read.csv("../data/sample_metadata/tube_meta_mcap.csv") %>%
 
 # Filter for sequenced samples
 meta_filt <- meta %>%
-  dplyr::filter(TubeID %in% colnames(counts_new))
+  dplyr::filter(TubeID %in% colnames(norm_counts))
 ```
 
 Reorder columns in filtered counts matrix so that it matches the metadata
 ```{r}
-counts_new <- counts_new[, meta_filt$TubeID]
+norm_counts <- norm_counts[, meta_filt$TubeID]
 
 # Sanity check! 
-meta_filt$TubeID %in% colnames(counts_new) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
-all(rownames(meta_filt$TubeID) == colnames(counts_new)) #are they the same in the same order? Should be TRUE
+meta_filt$TubeID %in% colnames(norm_counts) #are all of the sample names (rows) in the metadata df in the gene count matrix? Should be TRUE. 
+all(rownames(meta_filt$TubeID) == colnames(norm_counts)) #are they the same in the same order? Should be TRUE
 ```
 
 Set levels of factors 
@@ -115,19 +85,19 @@ meta_filt$hpf <- factor(meta_filt$hpf, levels = c("1 hpf", "4 hpf", "9 hpf", "14
 
 Set filtered counts to integer 
 ```{r}
-counts_new[] = lapply(counts_new, as.integer)
-str(counts_new)
+norm_counts[] = lapply(norm_counts, as.integer)
+str(norm_counts)
 ```
 
 Construct DESeq data set looking at gene expression across time points. 
 ```{r}
-gdds <- DESeqDataSetFromMatrix(countData = counts_new, colData = meta_filt, design = ~hpf)
+gdds <- DESeqDataSetFromMatrix(countData = norm_counts, colData = meta_filt, design = ~hpf)
 ```
 
 Visualize expression
 ```{r}
 # Transpose the data for PCA
-counts_t <- t(counts_new)
+counts_t <- t(norm_counts)
 
 # Merge with metadata
 pca_data <- merge(meta_filt, counts_t, by.x = "TubeID", by.y = "row.names")
@@ -149,6 +119,180 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = hpf)) +
   theme(legend.position = "right")
 ```
 
+Make a heatmap
+```{r}
+library(tidyverse)
+library(pheatmap)
+library(RColorBrewer)
+
+# 1. Order metadata by developmental stage (hpf)
+meta_sorted <- meta_filt %>%
+  rownames_to_column("TubeID") %>%
+  arrange(hpf) %>%
+  #column_to_column if needed...
+  column_to_rownames("TubeID")
+
+# 2. Reorder matrix columns to match the sorted metadata
+norm_counts_sorted <- norm_counts[, rownames(meta_sorted)]
+
+# 3. Log2-transform normalized counts (RPM)
+log2_counts <- log2(norm_counts_sorted + 1)
+
+# 4. Filter for top variable miRNAs (e.g., top 50 by variance across timepoints)
+top_var_mirnas <- head(order(rowVars(as.matrix(log2_counts)), decreasing = TRUE), 200)
+log2_counts_top <- log2_counts[top_var_mirnas, ]
+
+# 5. Build annotation data frame for heatmap columns
+annotation_col <- meta_sorted %>%
+  select(hpf)
+
+# 6. Set custom colors for hpf stages
+hpf_colors <- colorRampPalette(brewer.pal(8, "Spectral"))(length(levels(meta_sorted$hpf)))
+names(hpf_colors) <- levels(meta_sorted$hpf)
+ann_colors <- list(hpf = hpf_colors)
+
+# 7. Plot Heatmap (cluster_cols = FALSE keeps samples strictly ordered by hpf)
+pheatmap(
+  log2_counts_top,
+  scale = "row",
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  annotation_col = annotation_col,
+  annotation_colors = ann_colors,
+  show_rownames = FALSE,               # Turn off long scaffold row labels
+  show_colnames = FALSE,               # Turn off squished column labels (hpf bar conveys the stage)
+  fontsize_row = 6,
+  fontsize_col = 8,
+  treeheight_row = 30,                 # Shrink dendrogram width to make heatmap wider
+  main = "M. capitata Embryonic miRNA Expression (Ordered by hpf)"
+)
+```
+
+```{r}
+library(tidyverse)
+
+# 1. Transpose matrix (prcomp expects samples as rows and miRNAs as columns)
+# Filter out zero-variance miRNAs first to prevent scaling errors
+counts_matrix <- as.matrix(log2(norm_counts + 1))
+non_zero_var <- rowVars(counts_matrix) > 0
+pca_input <- t(counts_matrix[non_zero_var, ])
+
+# 2. Compute PCA
+pca_res <- prcomp(pca_input, scale. = TRUE)
+
+# 3. Calculate percentage of variance explained
+var_explained <- round(100 * (pca_res$sdev^2 / sum(pca_res$sdev^2)), 1)
+
+# 4. Combine PC scores with metadata
+pca_df <- as.data.frame(pca_res$x) %>%
+  rownames_to_column("TubeID") %>%
+  left_join(meta_filt %>% rownames_to_column("TubeID"), by = "TubeID")
+
+# 5. Plot PCA
+ggplot(pca_df, aes(x = PC1, y = PC2, color = hpf, label = TubeID)) +
+  geom_point(size = 4, alpha = 0.85) +
+  #scale_color_viridis_d(name = "Developmental Stage") + # Or use discrete palette matching heatmap
+  labs(
+    title = "PCA of M. capitata miRNA Profiles Across Embryogenesis",
+    x = paste0("PC1 (", var_explained[1], "% Variance)"),
+    y = paste0("PC2 (", var_explained[2], "% Variance)")
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+
+Plotting avg heatmap
+```{r}
+library(tidyverse)
+library(pheatmap)
+library(matrixStats)
+
+# 1. Log2 transform the full aligned count matrix
+log2_counts <- log2(norm_counts_aligned + 1)
+
+# 2. Extract sample-to-hpf mapping (matching column names order)
+hpf_factor <- meta_filt[colnames(log2_counts), "hpf"]
+
+# 3. Calculate row-wise means for each hpf level
+log2_counts_mean <- sapply(levels(hpf_factor), function(stage) {
+  samples <- colnames(log2_counts)[hpf_factor == stage]
+  if (length(samples) == 1) {
+    return(log2_counts[, samples])
+  } else {
+    return(rowMeans(log2_counts[, samples, drop = FALSE]))
+  }
+})
+
+# Convert back to matrix format
+log2_counts_mean <- as.matrix(log2_counts_mean)
+
+# Verify dimensions (should be: N miRNAs x 8 hpf timepoints)
+head(log2_counts_mean)
+
+# 1. Select top variable miRNAs across timepoints (e.g., top 50)
+top_var_idx <- head(order(rowVars(log2_counts_mean), decreasing = TRUE), 288)
+mean_matrix_top <- log2_counts_mean[top_var_idx, ]
+
+# 2. Build timepoint annotation header
+time_annotation <- data.frame(
+  hpf = factor(colnames(log2_counts_mean), levels = levels(hpf_factor)),
+  row.names = colnames(log2_counts_mean)
+)
+
+# 3. Generate Heatmap
+pheatmap(
+  mean_matrix_top,
+  scale = "row",             # Z-score scaling across timepoints to highlight shift
+  cluster_cols = FALSE,      # Keep strict 1 hpf -> 72 hpf chronological order
+  cluster_rows = TRUE,       # Cluster miRNAs with synchronized expression profiles
+  annotation_col = time_annotation,
+  show_rownames = FALSE,     # Set to TRUE if using clean mcap-mir-novel IDs
+  show_colnames = TRUE,      # Will cleanly show 1 hpf, 4 hpf, 9 hpf, etc.
+  angle_col = "0",           # Keep timepoint text horizontal
+  main = "Mean M. capitata miRNA Expression Across Embryogenesis"
+)
+```
+
+Cluster
+```{r}
+ph <- pheatmap(
+  mean_matrix_top, # Your top 200 matrix
+  scale = "row",
+  cluster_cols = FALSE,
+  cluster_rows = TRUE,
+  annotation_col = time_annotation,
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  main = "Mean M. capitata miRNA Expression Across Embryogenesis"
+)
+
+# 2. Cut the row dendrogram into 4 developmental clusters
+row_clusters <- cutree(ph$tree_row, k = 4)
+
+# 3. Create a data frame linking miRNA IDs to their temporal cluster
+mirna_clusters <- data.frame(
+  miRNA = names(row_clusters),
+  Cluster = paste0("Cluster_", row_clusters)
+)
+
+# 4. Check cluster counts
+table(mirna_clusters$Cluster)
+```
+
+
+
+
+
+
+
+
+
+
+
+
 Run test using the LRT to look for effect of lifestage as a whole across our experiment. There is only one main effect, so the reduced model is just the intercept.    
 ```{r, message = FALSE}
 DEG <- DESeq(gdds, test="LRT", reduced=~1)
@@ -163,7 +307,7 @@ rownames(DEG_results_all) <- NULL
 dim(DEG_results_all)
 
 # Save as csv 
-write.csv(DEG_results_all, "../output/Molecular/smRNA/smRNA_DE_results_all.csv")
+write.csv(DEG_results_all, "../output/Molecular/miRNA/miRNA_DE_results_all.csv")
 ```
 
 Filter by adjusted p value <0.05, this is generated by the LRT test statistic. 
@@ -172,7 +316,7 @@ DEG_results <- subset(DEG_results_all, padj<0.05)
 dim(DEG_results)
 
 # Save as csv 
-write.csv(DEG_results, "../output/Molecular/smRNA/miRNA_DE_results.csv")
+write.csv(DEG_results, "../output/Molecular/miRNA/miRNA_DE_results.csv")
 ```
 
 Conduct VST transformation for visualization.  
@@ -185,12 +329,8 @@ DEG_results_vst <- varianceStabilizingTransformation(DEG_results_vst)
 
 Generate a PCA     
 ```{r}
-# Subset by the samples that are currently working (ie no trimming issues)
-sample_names_to_keep <- c("M9", "M13", "M23", "M35", "M52", "M60", "M72", "M85")
-DEG_results_vst_subset <- DEG_results_vst[, sample_names_to_keep]
-
 # make pca plot 
-pcaData_DEG <- plotPCA(DEG_results_vst_subset, intgroup = c("hpf"), returnData = TRUE)
+pcaData_DEG <- plotPCA(DEG_results_vst, intgroup = c("hpf"), returnData = TRUE)
 
 percentVar_DEG <- round(100 * attr(pcaData_DEG, "percentVar"))
 ggplot(pcaData_DEG, aes(PC1, PC2, color = hpf, label = name)) + 
@@ -212,7 +352,11 @@ ggplot(pcaData_DEG, aes(PC1, PC2, color = hpf, label = name)) +
         plot.title = element_text(size = 20, face = "italic", hjust = 0.5))
 ```
 
-Basically the same as above. 
+Make a heatmap
+
+
+
+
 
 Look at specific contrasts 
 ```{r}

@@ -473,3 +473,8 @@ write.csv(final_mature_miRNAs, "../output/Molecular/miRNA/final_mature_miRNAs.cs
 write.csv(final_precursor_miRNAs, "../output/Molecular/miRNA/final_precursor_miRNAs.csv")
 ```
 
+```{r}
+miRNAs_expressed_all_samples_1794889168 <- read.delim("../output/Molecular/miRNA/miRNAs_expressed_all_samples_1794889168.csv")
+
+```
+
